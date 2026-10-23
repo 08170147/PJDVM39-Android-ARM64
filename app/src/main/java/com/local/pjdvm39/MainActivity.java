@@ -50,9 +50,9 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (width <= 0 || height <= 0 || !holder.getSurface().isValid() || activityDestroyed) return;
         final int generation = surfaceGeneration.incrementAndGet();
-        // Own a Surface wrapper for the queued task; the holder may invalidate its
-        // original Surface before this task reaches the single-thread executor.
-        final Surface surface = new Surface(holder.getSurface());
+        // Keep the holder-owned Surface reference; Surface has no public copy constructor.
+        // Re-check validity in the worker because the holder can destroy it while queued.
+        final Surface surface = holder.getSurface();
         final int frameWidth = width;
         final int frameHeight = height;
         try {
@@ -67,12 +67,9 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                             reportView.setText(nativeGetReport() + "\n--- Vulkan surface clear/present test ---\n" + result);
                         }
                     });
-                } finally {
-                    surface.release();
                 }
             });
         } catch (RejectedExecutionException ignored) {
-            surface.release();
             // Activity is shutting down; no further native work should be scheduled.
         }
     }
