@@ -21,6 +21,8 @@ jobs:
           gradle-version: '8.9'
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+      - name: Verify manifest and JNI declarations
+        run: python3 ./verify-manifest.py
       - name: Verify project structure
         run: bash ./verify-project.sh
       - name: Build ARM64 debug APK
