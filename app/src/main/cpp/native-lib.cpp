@@ -1,25 +1,208 @@
 #include <jni.h>
 #include <android/log.h>
+#include <android/native_window_jni.h>
+#define VK_USE_PLATFORM_ANDROID_KHR 1
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
+#include <algorithm>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #define LOG_TAG "PJDVM39Port"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_local_pjdvm39_MainActivity_nativeGetReport(JNIEnv* env, jclass) {
-    const std::string report =
-        "PJDV M39 Android ARM64 port skeleton\n\n"
-        "Status: JNI/build scaffold only. The original game renderer is NOT ported.\n"
-        "Target ABI: arm64-v8a\n"
-        "Vulkan surface clear/present routine: pending integration.\n"
-        "No game data is bundled with this skeleton.\n";
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Native report requested");
-    return env->NewStringUTF(report.c_str());
+static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth, uint32_t requestedHeight) {
+    std::ostringstream out;
+    if (!window) return "ANativeWindow_fromSurface failed.\n";
+    VkInstance instance = VK_NULL_HANDLE;
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkRenderPass renderPass = VK_NULL_HANDLE;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkSemaphore acquired = VK_NULL_HANDLE, rendered = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    std::vector<VkImageView> views;
+    std::vector<VkFramebuffer> framebuffers;
+    std::vector<VkCommandBuffer> commands;
+    VkQueue queue = VK_NULL_HANDLE;
+    auto check = [&](VkResult r, const char* label) {
+        if (r != VK_SUCCESS) { out << label << " failed: VkResult=" << static_cast<int>(r) << "\n"; return false; }
+        out << label << ": OK\n"; return true;
+    };
+    do {
+        uint32_t extCount = 0;
+        if (!check(vkEnumerateInstanceExtensionProperties(nullptr, &extCount, nullptr), "instance extension count")) break;
+        std::vector<VkExtensionProperties> exts(extCount);
+        if (!check(vkEnumerateInstanceExtensionProperties(nullptr, &extCount, exts.data()), "instance extension list")) break;
+        bool surfaceExt = false, androidExt = false;
+        for (const auto& e : exts) {
+            surfaceExt |= std::string(e.extensionName) == VK_KHR_SURFACE_EXTENSION_NAME;
+            androidExt |= std::string(e.extensionName) == VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+        }
+        if (!surfaceExt || !androidExt) { out << "Required Android Vulkan surface extensions unavailable.\n"; break; }
+        const char* instanceExts[] = { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME };
+        VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+        app.pApplicationName = "PJDVM39 Vulkan Clear Test"; app.applicationVersion = 1;
+        app.pEngineName = "PJDVM39Port"; app.engineVersion = 1; app.apiVersion = VK_API_VERSION_1_0;
+        VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        ici.pApplicationInfo = &app; ici.enabledExtensionCount = 2; ici.ppEnabledExtensionNames = instanceExts;
+        if (!check(vkCreateInstance(&ici, nullptr, &instance), "vkCreateInstance")) break;
+        VkAndroidSurfaceCreateInfoKHR sci{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR}; sci.window = window;
+        if (!check(vkCreateAndroidSurfaceKHR(instance, &sci, nullptr, &surface), "vkCreateAndroidSurfaceKHR")) break;
+        uint32_t physicalCount = 0;
+        if (!check(vkEnumeratePhysicalDevices(instance, &physicalCount, nullptr), "physical device count") || physicalCount == 0) { out << "No Vulkan physical devices.\n"; break; }
+        std::vector<VkPhysicalDevice> physicals(physicalCount);
+        if (!check(vkEnumeratePhysicalDevices(instance, &physicalCount, physicals.data()), "physical device list")) break;
+        VkPhysicalDevice physical = VK_NULL_HANDLE;
+        uint32_t family = 0;
+        for (auto candidate : physicals) {
+            uint32_t qCount = 0; vkGetPhysicalDeviceQueueFamilyProperties(candidate, &qCount, nullptr);
+            std::vector<VkQueueFamilyProperties> qs(qCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(candidate, &qCount, qs.data());
+            for (uint32_t q = 0; q < qCount; ++q) {
+                VkBool32 present = VK_FALSE;
+                if (vkGetPhysicalDeviceSurfaceSupportKHR(candidate, q, surface, &present) == VK_SUCCESS &&
+                    present && (qs[q].queueFlags & VK_QUEUE_GRAPHICS_BIT)) { physical = candidate; family = q; break; }
+            }
+            if (physical) break;
+        }
+        if (!physical) { out << "No graphics queue supports presentation to this Android surface.\n"; break; }
+        VkPhysicalDeviceProperties props{}; vkGetPhysicalDeviceProperties(physical, &props);
+        out << "GPU: " << props.deviceName << "; queue family=" << family << "\n";
+        uint32_t devExtCount = 0;
+        if (vkEnumerateDeviceExtensionProperties(physical, nullptr, &devExtCount, nullptr) != VK_SUCCESS) { out << "Device extension enumeration failed.\n"; break; }
+        std::vector<VkExtensionProperties> devExts(devExtCount);
+        if (vkEnumerateDeviceExtensionProperties(physical, nullptr, &devExtCount, devExts.data()) != VK_SUCCESS) { out << "Device extension listing failed.\n"; break; }
+        bool swapchainExt = false;
+        for (const auto& e : devExts) swapchainExt |= std::string(e.extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        if (!swapchainExt) { out << "VK_KHR_swapchain unavailable.\n"; break; }
+        float priority = 1.0f;
+        VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+        qci.queueFamilyIndex = family; qci.queueCount = 1; qci.pQueuePriorities = &priority;
+        const char* deviceExts[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+        VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci; dci.enabledExtensionCount = 1; dci.ppEnabledExtensionNames = deviceExts;
+        if (!check(vkCreateDevice(physical, &dci, nullptr, &device), "vkCreateDevice")) break;
+        vkGetDeviceQueue(device, family, 0, &queue);
+        VkSurfaceCapabilitiesKHR caps{};
+        if (!check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps), "surface capabilities")) break;
+        uint32_t formatCount = 0;
+        if (!check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &formatCount, nullptr), "surface format count") || !formatCount) { out << "No surface formats.\n"; break; }
+        std::vector<VkSurfaceFormatKHR> formats(formatCount);
+        if (!check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &formatCount, formats.data()), "surface formats")) break;
+        VkSurfaceFormatKHR chosen = formats[0];
+        for (const auto& f : formats) if ((f.format == VK_FORMAT_R8G8B8A8_UNORM || f.format == VK_FORMAT_B8G8R8A8_UNORM) && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { chosen = f; break; }
+        VkExtent2D extent = caps.currentExtent;
+        if (extent.width == UINT32_MAX) {
+            extent.width = std::max(caps.minImageExtent.width, std::min(caps.maxImageExtent.width, requestedWidth));
+            extent.height = std::max(caps.minImageExtent.height, std::min(caps.maxImageExtent.height, requestedHeight));
+        }
+        if (!extent.width || !extent.height || !(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) { out << "Surface extent/usage is not renderable.\n"; break; }
+        uint32_t imageCount = caps.minImageCount + 1;
+        if (caps.maxImageCount && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
+        VkSwapchainCreateInfoKHR sw{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+        sw.surface = surface; sw.minImageCount = imageCount; sw.imageFormat = chosen.format; sw.imageColorSpace = chosen.colorSpace;
+        sw.imageExtent = extent; sw.imageArrayLayers = 1; sw.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        sw.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; sw.preTransform = caps.currentTransform;
+        if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) sw.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        else if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) sw.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+        else if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) sw.compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+        else sw.compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+        sw.presentMode = VK_PRESENT_MODE_FIFO_KHR; sw.clipped = VK_TRUE;
+        if (!check(vkCreateSwapchainKHR(device, &sw, nullptr, &swapchain), "vkCreateSwapchainKHR")) break;
+        uint32_t n = 0;
+        if (!check(vkGetSwapchainImagesKHR(device, swapchain, &n, nullptr), "swapchain image count") || !n) { out << "No swapchain images.\n"; break; }
+        std::vector<VkImage> images(n);
+        if (!check(vkGetSwapchainImagesKHR(device, swapchain, &n, images.data()), "swapchain images")) break;
+        views.resize(n, VK_NULL_HANDLE); framebuffers.resize(n, VK_NULL_HANDLE); commands.resize(n, VK_NULL_HANDLE);
+        for (uint32_t i = 0; i < n; ++i) {
+            VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            vi.image = images[i]; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = chosen.format;
+            vi.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; vi.subresourceRange.levelCount = 1; vi.subresourceRange.layerCount = 1;
+            if (!check(vkCreateImageView(device, &vi, nullptr, &views[i]), "vkCreateImageView")) break;
+        }
+        bool allViews = std::all_of(views.begin(), views.end(), [](VkImageView v){ return v != VK_NULL_HANDLE; });
+        if (!allViews) break;
+        VkAttachmentDescription att{}; att.format = chosen.format; att.samples = VK_SAMPLE_COUNT_1_BIT;
+        att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; att.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        VkAttachmentReference ar{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkSubpassDescription sub{}; sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; sub.colorAttachmentCount = 1; sub.pColorAttachments = &ar;
+        VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO}; rp.attachmentCount = 1; rp.pAttachments = &att; rp.subpassCount = 1; rp.pSubpasses = &sub;
+        if (!check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "vkCreateRenderPass")) break;
+        bool allFramebuffers = true;
+        for (uint32_t i = 0; i < n; ++i) {
+            VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            fb.renderPass = renderPass; fb.attachmentCount = 1; fb.pAttachments = &views[i]; fb.width = extent.width; fb.height = extent.height; fb.layers = 1;
+            if (!check(vkCreateFramebuffer(device, &fb, nullptr, &framebuffers[i]), "vkCreateFramebuffer")) { allFramebuffers = false; break; }
+        }
+        if (!allFramebuffers) break;
+        VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO}; cp.queueFamilyIndex = family; cp.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        if (!check(vkCreateCommandPool(device, &cp, nullptr, &commandPool), "vkCreateCommandPool")) break;
+        VkCommandBufferAllocateInfo ca{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO}; ca.commandPool = commandPool; ca.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; ca.commandBufferCount = n;
+        if (!check(vkAllocateCommandBuffers(device, &ca, commands.data()), "vkAllocateCommandBuffers")) break;
+        VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        if (!check(vkCreateSemaphore(device, &si, nullptr, &acquired), "acquire semaphore") || !check(vkCreateSemaphore(device, &si, nullptr, &rendered), "render semaphore")) break;
+        VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        if (!check(vkCreateFence(device, &fi, nullptr, &fence), "vkCreateFence")) break;
+        uint32_t imageIndex = 0;
+        VkResult arq = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &imageIndex);
+        if (arq != VK_SUCCESS && arq != VK_SUBOPTIMAL_KHR) { out << "vkAcquireNextImageKHR failed: VkResult=" << static_cast<int>(arq) << "\n"; break; }
+        if (imageIndex >= n) { out << "Acquired image index out of range.\n"; break; }
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO}; bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (!check(vkBeginCommandBuffer(commands[imageIndex], &bi), "vkBeginCommandBuffer")) break;
+        VkClearValue clear{}; clear.color.float32[0] = 0.035f; clear.color.float32[1] = 0.12f; clear.color.float32[2] = 0.24f; clear.color.float32[3] = 1.0f;
+        VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO}; rbi.renderPass = renderPass; rbi.framebuffer = framebuffers[imageIndex];
+        rbi.renderArea.extent = extent; rbi.clearValueCount = 1; rbi.pClearValues = &clear;
+        vkCmdBeginRenderPass(commands[imageIndex], &rbi, VK_SUBPASS_CONTENTS_INLINE); vkCmdEndRenderPass(commands[imageIndex]);
+        if (!check(vkEndCommandBuffer(commands[imageIndex]), "vkEndCommandBuffer")) break;
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.waitSemaphoreCount = 1; submit.pWaitSemaphores = &acquired;
+        submit.pWaitDstStageMask = &waitStage; submit.commandBufferCount = 1; submit.pCommandBuffers = &commands[imageIndex];
+        submit.signalSemaphoreCount = 1; submit.pSignalSemaphores = &rendered;
+        if (!check(vkQueueSubmit(queue, 1, &submit, fence), "vkQueueSubmit") || !check(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences")) break;
+        VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR}; pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &rendered;
+        pi.swapchainCount = 1; pi.pSwapchains = &swapchain; pi.pImageIndices = &imageIndex;
+        VkResult pr = vkQueuePresentKHR(queue, &pi);
+        if (pr == VK_SUCCESS || pr == VK_SUBOPTIMAL_KHR) out << "PASS: Vulkan frame cleared and presented at " << extent.width << "x" << extent.height << (pr == VK_SUBOPTIMAL_KHR || arq == VK_SUBOPTIMAL_KHR ? " (suboptimal swapchain)" : "") << "\n";
+        else out << "vkQueuePresentKHR failed: VkResult=" << static_cast<int>(pr) << "\n";
+        VkResult idle = vkQueueWaitIdle(queue); if (idle != VK_SUCCESS) out << "vkQueueWaitIdle failed: VkResult=" << static_cast<int>(idle) << "\n";
+    } while (false);
+    if (device) vkDeviceWaitIdle(device);
+    if (commandPool && device) vkDestroyCommandPool(device, commandPool, nullptr);
+    for (auto fb : framebuffers) if (fb && device) vkDestroyFramebuffer(device, fb, nullptr);
+    if (renderPass && device) vkDestroyRenderPass(device, renderPass, nullptr);
+    for (auto view : views) if (view && device) vkDestroyImageView(device, view, nullptr);
+    if (fence && device) vkDestroyFence(device, fence, nullptr);
+    if (acquired && device) vkDestroySemaphore(device, acquired, nullptr);
+    if (rendered && device) vkDestroySemaphore(device, rendered, nullptr);
+    if (swapchain && device) vkDestroySwapchainKHR(device, swapchain, nullptr);
+    if (device) vkDestroyDevice(device, nullptr);
+    if (surface && instance) vkDestroySurfaceKHR(instance, surface, nullptr);
+    if (instance) vkDestroyInstance(instance, nullptr);
+    return out.str();
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_local_pjdvm39_MainActivity_nativeRenderFrame(JNIEnv* env, jclass, jobject, jint, jint) {
-    const char* message =
-        "Vulkan frame test is not implemented in this GitHub scaffold yet. "
-        "Integrate and validate the Vulkan surface/swapchain implementation before device testing.";
-    return env->NewStringUTF(message);
+Java_com_local_pjdvm39_MainActivity_nativeGetReport(JNIEnv* env, jclass) {
+    std::ostringstream out;
+    out << "PJDV M39 Android ARM64 port skeleton\n";
+    out << "Status: Vulkan surface clear/present smoke test; game renderer is NOT ported.\n";
+    out << "Target ABI: arm64-v8a\n";
+    out << "The test creates a Vulkan instance, chooses a graphics/present queue, clears one swapchain image, and presents once.\n";
+    out << "No game data is bundled with this skeleton.\n";
+    return env->NewStringUTF(out.str().c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_local_pjdvm39_MainActivity_nativeRenderFrame(JNIEnv* env, jclass, jobject javaSurface, jint width, jint height) {
+    ANativeWindow* window = ANativeWindow_fromSurface(env, javaSurface);
+    if (!window) return env->NewStringUTF("ANativeWindow_fromSurface failed.");
+    const std::string result = renderOneFrame(window, static_cast<uint32_t>(std::max(0, width)), static_cast<uint32_t>(std::max(0, height)));
+    ANativeWindow_release(window);
+    LOGI("One-frame Vulkan test finished");
+    return env->NewStringUTF(result.c_str());
 }
