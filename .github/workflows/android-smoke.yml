@@ -27,6 +27,8 @@ jobs:
         run: bash ./verify-project.sh
       - name: Build ARM64 debug APK
         run: gradle :app:assembleDebug
+      - name: Verify merged Android manifest
+        run: python3 ./verify-merged-manifest.py
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
