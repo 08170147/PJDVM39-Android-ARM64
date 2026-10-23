@@ -27,7 +27,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         root.setOrientation(LinearLayout.VERTICAL);
 
         TextView heading = new TextView(this);
-        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\nExpected: a dark blue clear color if presentation succeeds.");
+        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\\nExpected: a dark blue clear color if presentation succeeds.");
         heading.setPadding(20, 18, 20, 14);
         root.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
@@ -36,7 +36,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         root.addView(surfaceView, new LinearLayout.LayoutParams(-1, 0, 2.0f));
 
         reportView = new TextView(this);
-        reportView.setText(nativeGetReport() + "\nWaiting for SurfaceView...\n");
+        reportView.setText(nativeGetReport() + "\\nWaiting for SurfaceView...\\n");
         reportView.setTextIsSelectable(true);
         reportView.setPadding(20, 16, 20, 24);
         ScrollView scroll = new ScrollView(this);
@@ -50,24 +50,21 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (width <= 0 || height <= 0 || !holder.getSurface().isValid() || activityDestroyed) return;
         final int generation = surfaceGeneration.incrementAndGet();
-        // Keep the holder-owned Surface reference; Surface has no public copy constructor.
-        // Re-check validity in the worker because the holder can destroy it while queued.
+        // Surface is owned by the holder; check validity again when the queued task runs.
         final Surface surface = holder.getSurface();
         final int frameWidth = width;
         final int frameHeight = height;
         try {
             renderExecutor.execute(() -> {
-                try {
-                    if (activityDestroyed || generation != surfaceGeneration.get() || !surface.isValid()) return;
-                    // Vulkan creation, queue waits and teardown can block; never run them on the UI thread.
-                    final String result = nativeRenderFrame(surface, frameWidth, frameHeight);
-                    runOnUiThread(() -> {
-                        if (!activityDestroyed && generation == surfaceGeneration.get()
-                                && surfaceView != null && surfaceView.getHolder().getSurface().isValid()) {
-                            reportView.setText(nativeGetReport() + "\n--- Vulkan surface clear/present test ---\n" + result);
-                        }
-                    });
-                }
+                if (activityDestroyed || generation != surfaceGeneration.get() || !surface.isValid()) return;
+                // Vulkan setup and presentation can block; never run them on the UI thread.
+                final String result = nativeRenderFrame(surface, frameWidth, frameHeight);
+                runOnUiThread(() -> {
+                    if (!activityDestroyed && generation == surfaceGeneration.get()
+                            && surfaceView != null && surfaceView.getHolder().getSurface().isValid()) {
+                        reportView.setText(nativeGetReport() + "\\n--- Vulkan surface clear/present test ---\\n" + result);
+                    }
+                });
             });
         } catch (RejectedExecutionException ignored) {
             // Activity is shutting down; no further native work should be scheduled.
@@ -75,7 +72,6 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     }
 
     @Override public void surfaceDestroyed(SurfaceHolder holder) {
-        // Invalidate results from any in-flight frame; the native layer holds its own ANativeWindow ref.
         surfaceGeneration.incrementAndGet();
     }
 
