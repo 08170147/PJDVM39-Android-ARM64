@@ -1,0 +1,24 @@
+name: Android ARM64 smoke checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify project structure
+        run: bash ./verify-project.sh
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          if [ -x ./gradlew ]; then ./gradlew :app:assembleDebug; else echo "No Gradle wrapper in repository; install/use Gradle or add wrapper."; exit 1; fi
