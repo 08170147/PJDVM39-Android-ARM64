@@ -25,3 +25,6 @@ Open this repository root in Android Studio, sync Gradle, then build the `app` d
 - An APK is not considered validated until the CI build succeeds and the artifact is available; a physical-device test is still required to confirm Vulkan presentation on real hardware.
 
 See [`docs/IPA-0.1.5b19-audit.md`](docs/IPA-0.1.5b19-audit.md) for verified findings from the 0.1.5 Build 19 IPA. See `README_WINDOWS.md` for Windows-specific setup and preflight instructions.
+
+## Latest reverse-engineering notes
+- [Mach-O custom section inventory](docs/EXECUTABLE-SECTION-INVENTORY.md): verified section names/sizes and porting implications.
