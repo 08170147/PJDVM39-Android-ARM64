@@ -10,8 +10,4 @@ grep -q "nativeGetReport" "$ROOT/app/src/main/java/com/local/pjdvm39/MainActivit
 grep -q "nativeRenderFrame" "$ROOT/app/src/main/java/com/local/pjdvm39/MainActivity.java" || { echo "Missing JNI render method"; fail=1; }
 if [[ "$fail" -ne 0 ]]; then exit 1; fi
 echo "Project structure checks passed."
-if command -v gradle >/dev/null 2>&1; then
-  gradle -p "$ROOT" :app:assembleDebug
-else
-  echo "Gradle not found; build step skipped."
-fi
+echo "Project structure checks passed. Build is handled by the dedicated CI build step."
