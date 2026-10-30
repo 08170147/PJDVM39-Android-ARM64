@@ -9,5 +9,7 @@ void main() {
     );
     vec2 p = positions[gl_VertexIndex];
     gl_Position = vec4(p, 0.0, 1.0);
-    vUV = p * 0.5 + 0.5;
+    vec2 uv = p * 0.5 + 0.5;
+    // Buffer row zero is the top row; flip V for a top-left image origin.
+    vUV = vec2(uv.x, 1.0 - uv.y);
 }
