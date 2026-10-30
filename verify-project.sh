@@ -9,5 +9,4 @@ grep -q "arm64-v8a" "$ROOT/app/build.gradle" || { echo "Missing arm64-v8a ABI fi
 grep -q "nativeGetReport" "$ROOT/app/src/main/java/com/local/pjdvm39/MainActivity.java" || { echo "Missing JNI report method"; fail=1; }
 grep -q "nativeRenderFrame" "$ROOT/app/src/main/java/com/local/pjdvm39/MainActivity.java" || { echo "Missing JNI render method"; fail=1; }
 if [[ "$fail" -ne 0 ]]; then exit 1; fi
-echo "Project structure checks passed."
 echo "Project structure checks passed. Build is handled by the dedicated CI build step."
