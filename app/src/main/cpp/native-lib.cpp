@@ -26,12 +26,38 @@ struct Bc5SampleResources {
 };
 
 static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, VkQueue queue, uint32_t family,
-                                    VkDescriptorSetLayout descriptorLayout, Bc5SampleResources& sample) {
+                                    VkDescriptorSetLayout descriptorLayout, AAssetManager* assets, Bc5SampleResources& sample) {
     std::ostringstream out;
     VkFormatProperties fp{};
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_BC5_UNORM_BLOCK, &fp);
     const auto required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
     if ((fp.optimalTilingFeatures & required) != required) return "BC5 upload fixture: SKIP (format features unavailable)\n";
+    // Optional real TXP payload: raw BC5 bytes for a 2048x2048 texture (one byte per pixel).
+    // If it is not packaged yet, retain the tiny synthetic fixture so the Vulkan path remains testable.
+    constexpr uint32_t textureWidth = 2048, textureHeight = 2048;
+    std::vector<uint8_t> bc5Bytes;
+    bool usingRealTexture = false;
+    if (assets) {
+        AAsset* txp = AAssetManager_open(assets, "pjdvm39/exitmenu_2048x2048.bc5", AASSET_MODE_BUFFER);
+        if (txp) {
+            const off_t length = AAsset_getLength(txp);
+            const size_t expected = static_cast<size_t>(textureWidth) * textureHeight;
+            if (length == static_cast<off_t>(expected)) {
+                bc5Bytes.resize(expected);
+                const int got = AAsset_read(txp, bc5Bytes.data(), expected);
+                usingRealTexture = got == static_cast<int>(expected);
+            }
+            AAsset_close(txp);
+            if (!usingRealTexture) bc5Bytes.clear();
+        }
+    }
+    if (!usingRealTexture) {
+        const uint8_t fixture[16] = {255,0,0,0,0,0,0,0, 255,0,0,0,0,0,0,0};
+        bc5Bytes.assign(fixture, fixture + sizeof(fixture));
+    }
+    const VkDeviceSize textureBytes = bc5Bytes.size();
+    const uint32_t uploadWidth = usingRealTexture ? textureWidth : 4;
+    const uint32_t uploadHeight = usingRealTexture ? textureHeight : 4;
     VkBuffer buffer = VK_NULL_HANDLE; VkDeviceMemory bufferMem = VK_NULL_HANDLE;
     VkImage image = VK_NULL_HANDLE; VkDeviceMemory imageMem = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE;
@@ -45,19 +71,18 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     };
     auto err = [&](const char* op, VkResult r) { out << "BC5 upload fixture: " << op << " failed VkResult=" << int(r) << "\n"; };
     do {
-        const uint8_t block[16] = {255,0,0,0,0,0,0,0, 255,0,0,0,0,0,0,0};
-        VkBufferCreateInfo b{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO}; b.size=16; b.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT; b.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+        VkBufferCreateInfo b{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO}; b.size=textureBytes; b.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT; b.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
         VkResult r=vkCreateBuffer(device,&b,nullptr,&buffer); if(r!=VK_SUCCESS){err("vkCreateBuffer",r);break;}
         VkMemoryRequirements br{}; vkGetBufferMemoryRequirements(device,buffer,&br);
         uint32_t mt=0; if(!memType(br.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,mt)){out<<"BC5 upload fixture: no coherent host memory\n";break;}
         VkMemoryAllocateInfo ma{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; ma.allocationSize=br.size; ma.memoryTypeIndex=mt;
         r=vkAllocateMemory(device,&ma,nullptr,&bufferMem); if(r!=VK_SUCCESS){err("staging allocate",r);break;}
         r=vkBindBufferMemory(device,buffer,bufferMem,0); if(r!=VK_SUCCESS){err("bind staging",r);break;}
-        void* data=nullptr; r=vkMapMemory(device,bufferMem,0,16,0,&data); if(r!=VK_SUCCESS){err("map staging",r);break;}
-        memcpy(data,block,16); vkUnmapMemory(device,bufferMem);
+        void* data=nullptr; r=vkMapMemory(device,bufferMem,0,textureBytes,0,&data); if(r!=VK_SUCCESS){err("map staging",r);break;}
+        memcpy(data,bc5Bytes.data(),static_cast<size_t>(textureBytes)); vkUnmapMemory(device,bufferMem);
 
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; ii.imageType=VK_IMAGE_TYPE_2D; ii.format=VK_FORMAT_BC5_UNORM_BLOCK;
-        ii.extent={4,4,1}; ii.mipLevels=1; ii.arrayLayers=1; ii.samples=VK_SAMPLE_COUNT_1_BIT; ii.tiling=VK_IMAGE_TILING_OPTIMAL;
+        ii.extent={uploadWidth,uploadHeight,1}; ii.mipLevels=1; ii.arrayLayers=1; ii.samples=VK_SAMPLE_COUNT_1_BIT; ii.tiling=VK_IMAGE_TILING_OPTIMAL;
         ii.usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT; ii.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
         r=vkCreateImage(device,&ii,nullptr,&image); if(r!=VK_SUCCESS){err("vkCreateImage BC5",r);break;}
         VkMemoryRequirements ir{}; vkGetImageMemoryRequirements(device,image,&ir);
@@ -78,7 +103,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         toDst.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; toDst.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; toDst.image=image;
         toDst.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,1,&toDst);
-        VkBufferImageCopy region{}; region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; region.imageExtent={4,4,1};
+        VkBufferImageCopy region{}; region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; region.imageExtent={uploadWidth,uploadHeight,1};
         vkCmdCopyBufferToImage(cmd,buffer,image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&region);
         VkImageMemoryBarrier toRead{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER}; toRead.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
         toRead.dstAccessMask=VK_ACCESS_SHADER_READ_BIT; toRead.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -332,7 +357,7 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         if (!check(vkCreateDescriptorSetLayout(device, &sampleSetInfo, nullptr, &sampleSetLayout),
                    "vkCreateDescriptorSetLayout sample")) break;
 
-        out << uploadBc5Fixture(physical, device, queue, family, sampleSetLayout, bc5);
+        out << uploadBc5Fixture(physical, device, queue, family, sampleSetLayout, assets, bc5);
         if (!bc5.image || !bc5.descriptorSet) break;
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
