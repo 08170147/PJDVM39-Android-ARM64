@@ -16,7 +16,7 @@ import struct
 import zipfile
 from pathlib import Path
 
-ARCHIVE_SUFFIX = "ExitMenu/en/spr_nswgam_menu.farc"
+ARCHIVE_NAME = "spr_nswgam_menu.farc"
 EXPECTED_WIDTH = 2048
 EXPECTED_HEIGHT = 2048
 EXPECTED_BYTES = EXPECTED_WIDTH * EXPECTED_HEIGHT
@@ -74,9 +74,9 @@ def main() -> int:
 
     with zipfile.ZipFile(args.ipa) as ipa:
         names = ipa.namelist()
-        candidates = [n for n in names if n.endswith(ARCHIVE_SUFFIX)]
+        candidates = [n for n in names if n.endswith(ARCHIVE_NAME) and "/ExitMenu/en/" in n]
         if not candidates:
-            raise SystemExit(f"Could not find */{ARCHIVE_SUFFIX} inside IPA")
+            raise SystemExit(f"Could not find the English ExitMenu {ARCHIVE_NAME} inside IPA")
         archive_name = candidates[0]
         if len(candidates) > 1:
             print(f"Found {len(candidates)} locale archives; using {archive_name}")
