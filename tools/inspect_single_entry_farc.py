@@ -29,14 +29,10 @@ def inspect(path: Path) -> tuple[dict, bytes]:
     if raw[:4] != MAGIC:
         raise ValueError(f"Unexpected magic: {raw[:4]!r}")
 
-    header_size_field = u32be(raw, 0x04)
-    name_field_size = u32be(raw, 0x08)
-    name_start = 0x0C
-    name_end = name_start + name_field_size
-    if name_end > FIXED_HEADER_SIZE:
-        raise ValueError("Name field extends beyond the observed fixed header")
-
-    embedded_name = raw[name_start:name_end].split(b"\\0", 1)[0].decode("utf-8", "strict")
+    header_word_04 = u32be(raw, 0x04)
+    header_word_08 = u32be(raw, 0x08)
+    # Observed filename slot occupies 20 bytes at 0x0C..0x1F.
+    embedded_name = raw[0x0C:0x20].split(b"\\0", 1)[0].decode("utf-8", "strict")
     data_offset = u32be(raw, 0x20)
     compressed_size = u32be(raw, 0x24)
     expanded_size = u32be(raw, 0x28)
@@ -56,8 +52,8 @@ def inspect(path: Path) -> tuple[dict, bytes]:
         "archive": path.name,
         "archive_bytes": len(raw),
         "magic": raw[:4].decode("ascii"),
-        "header_size_field": header_size_field,
-        "name_field_size": name_field_size,
+        "header_word_04": header_word_04,
+        "header_word_08": header_word_08,
         "embedded_name": embedded_name,
         "data_offset": data_offset,
         "compressed_size": compressed_size,
