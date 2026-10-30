@@ -61,7 +61,7 @@ def main() -> int:
     print("NOTE: offsets/signatures are observations, not decoded TXP records.")
 
     if args.json:
-        args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"json_report: {args.json}")
     return 0
 
