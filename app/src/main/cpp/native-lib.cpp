@@ -23,6 +23,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     VkBuffer buffer = VK_NULL_HANDLE; VkDeviceMemory bufferMem = VK_NULL_HANDLE;
     VkImage image = VK_NULL_HANDLE; VkDeviceMemory imageMem = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE;
+    VkImageView imageView = VK_NULL_HANDLE; VkSampler sampler = VK_NULL_HANDLE;
     bool passed = false;
     auto memType = [&](uint32_t bits, VkMemoryPropertyFlags flags, uint32_t& index) {
         VkPhysicalDeviceMemoryProperties p{}; vkGetPhysicalDeviceMemoryProperties(physical, &p);
@@ -76,10 +77,28 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO}; si.commandBufferCount=1; si.pCommandBuffers=&cmd;
         r=vkQueueSubmit(queue,1,&si,fence); if(r!=VK_SUCCESS){err("queue submit",r);break;}
         r=vkWaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX); if(r!=VK_SUCCESS){err("wait fence",r);break;}
+        VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        viewInfo.image = image; viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; viewInfo.format = VK_FORMAT_BC5_UNORM_BLOCK;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        r = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
+        if (r != VK_SUCCESS) { err("vkCreateImageView BC5", r); break; }
+
+        VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        samplerInfo.magFilter = VK_FILTER_NEAREST; samplerInfo.minFilter = VK_FILTER_NEAREST;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.maxAnisotropy = 1.0f; samplerInfo.minLod = 0.0f; samplerInfo.maxLod = 0.0f;
+        r = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
+        if (r != VK_SUCCESS) { err("vkCreateSampler BC5", r); break; }
+
         passed=true;
-        out<<"PASS: 4x4 BC5 block (16 bytes) staged and uploaded; layout UNDEFINED -> TRANSFER_DST -> SHADER_READ_ONLY\n";
+        out<<"PASS: 4x4 BC5 block staged/uploaded; image view and sampler created; layout UNDEFINED -> TRANSFER_DST -> SHADER_READ_ONLY (shader sampling not yet tested)\n";
     } while(false);
     if(device) vkDeviceWaitIdle(device);
+    if(sampler) vkDestroySampler(device,sampler,nullptr);
+    if(imageView) vkDestroyImageView(device,imageView,nullptr);
     if(fence) vkDestroyFence(device,fence,nullptr);
     if(pool) vkDestroyCommandPool(device,pool,nullptr);
     if(image) vkDestroyImage(device,image,nullptr);
