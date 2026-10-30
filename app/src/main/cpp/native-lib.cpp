@@ -134,7 +134,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
         passed=true;
-        out<<"PASS: 4x4 BC5 block staged/uploaded; image view and sampler created; layout UNDEFINED -> TRANSFER_DST -> SHADER_READ_ONLY (shader sampling not yet tested)\n";
+        out<<"PASS: BC5 upload, image view, sampler and combined-image-sampler descriptor set created; shader sampling not yet tested\n";
     } while(false);
     if(device) vkDeviceWaitIdle(device);
     if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
