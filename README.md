@@ -46,6 +46,18 @@ hash report. The format-ID-to-BC5 mapping, channel swizzle, UV/layout, and
 mipmap behavior remain hypotheses requiring runtime validation. The extracted
 asset is not included in this repository; users must provide their own IPA.
 
+For a one-command local extraction, validation, ARM64 debug build, and APK
+asset-presence check, use:
+
+```bash
+bash ./build-with-ipa.sh /path/to/PJDVM39-0.1.5b19-iOS-unsigned.ipa
+```
+
+This convenience script keeps the IPA, extracted texture, and extraction report
+local. It does not upload game data to GitHub. The CI workflow syntax-checks
+this helper; the actual IPA-based build must be run locally with the Android
+SDK/NDK and Gradle prerequisites installed.
+
 ## Shader metadata export
 The metadata-only exporter can turn the IPA's shader map and per-library JSON into a local checklist without copying Metal binaries or game archives:
 
