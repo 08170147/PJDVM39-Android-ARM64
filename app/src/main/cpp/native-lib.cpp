@@ -135,8 +135,12 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         write.pImageInfo = &imageInfo;
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
+        sample.image = image; sample.memory = imageMem; sample.view = imageView;
+        sample.sampler = sampler; sample.descriptorPool = descriptorPool; sample.descriptorSet = descriptorSet;
+        image = VK_NULL_HANDLE; imageMem = VK_NULL_HANDLE; imageView = VK_NULL_HANDLE;
+        sampler = VK_NULL_HANDLE; descriptorPool = VK_NULL_HANDLE;
         passed=true;
-        out<<"PASS: BC5 upload, image view, sampler and combined-image-sampler descriptor set created; shader sampling not yet tested\n";
+        out<<"PASS: BC5 fixture uploaded and descriptor set prepared for sampling\n";
     } while(false);
     if(device) vkDeviceWaitIdle(device);
     if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
