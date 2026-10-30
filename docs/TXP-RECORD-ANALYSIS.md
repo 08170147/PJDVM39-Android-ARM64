@@ -62,3 +62,30 @@ python3 tools/inspect_txp_records.py spr_nswgam_menu.bin --json txp-report.json
 ```
 
 The new inspector reports candidate dimensions, format ID, payload boundary, byte count, and SHA-256. It does not decode or render image pixels.
+
+## Candidate BC5 decode
+
+A test decoder was applied to the first 2048×2048 type-2 record at offset 332,652.
+The payload length is exactly the number of 4×4 blocks multiplied by 16 bytes:
+`(2048 / 4) × (2048 / 4) × 16 = 4,194,304`.
+This is consistent with BC5 block storage. The nearby identifier `MERGE_BC5COMP_6`
+is an additional clue, but neither that name nor format ID 11 alone proves the
+format mapping.
+
+The included `tools/decode_txp_bc5.py` decodes the candidate BC5 blocks and
+writes a diagnostic PNG with the decoded first channel shown in red and the
+second in green. The resulting preview exposes recognizable character,
+menu-panel, and text-like shapes, which is encouraging evidence that the
+block decoder is interpreting the payload meaningfully.
+
+The preview is **not** the original full-color menu image: BC5 carries two
+channels, and this debug view sets blue to zero. Exact channel semantics,
+texture swizzle/layout, alpha handling, and the engine's shader interpretation
+still need confirmation against a runtime/reference capture. Do not treat this
+as proof of final visual fidelity.
+
+Reproduce:
+
+```sh
+python3 tools/decode_txp_bc5.py spr_nswgam_menu.bin --record 2 --out txp_record_02_rg.png
+```
