@@ -40,3 +40,4 @@ python3 tools/export_shader_inventory.py /path/to/PJDVM39-0.1.5b19-iOS-unsigned.
 The exporter was tested against Build 19: 808/808 shader-map records resolved to per-shader metadata (0 missing). This is metadata coverage only, not Vulkan shader compatibility or visual validation.
 - [Metal-to-Vulkan binding plan](docs/METAL-TO-VULKAN-BINDING-PLAN.md): verified shader binding counts, candidate Vulkan mappings, and unresolved translation requirements.
 - [ExitMenu FArC format notes](docs/EXITMENU-FARC-FORMAT.md) and [local inspector](tools/inspect_single_entry_farc.py): validates the observed single-entry gzip container without bundling game assets.
+- [ExitMenu BIN structure notes](docs/EXITMENU-BIN-STRUCTURE.md) and [BIN inspector](tools/inspect_exitmenu_bin.py): inventories resource-name strings and TXP marker offsets without claiming a full decoder.
