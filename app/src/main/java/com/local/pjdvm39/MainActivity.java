@@ -27,7 +27,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         root.setOrientation(LinearLayout.VERTICAL);
 
         TextView heading = new TextView(this);
-        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\\nExpected: a dark blue clear color if presentation succeeds.");
+        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\nExpected: a dark blue clear color if presentation succeeds.");
         heading.setPadding(20, 18, 20, 14);
         root.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
@@ -36,7 +36,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         root.addView(surfaceView, new LinearLayout.LayoutParams(-1, 0, 2.0f));
 
         reportView = new TextView(this);
-        reportView.setText(nativeGetReport() + "\\nWaiting for SurfaceView...\\n");
+        reportView.setText(nativeGetReport() + "\nWaiting for SurfaceView...\n");
         reportView.setTextIsSelectable(true);
         reportView.setPadding(20, 16, 20, 24);
         ScrollView scroll = new ScrollView(this);
@@ -62,7 +62,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
                 runOnUiThread(() -> {
                     if (!activityDestroyed && generation == surfaceGeneration.get()
                             && surfaceView != null && surfaceView.getHolder().getSurface().isValid()) {
-                        reportView.setText(nativeGetReport() + "\\n--- Vulkan surface clear/present test ---\\n" + result);
+                        reportView.setText(nativeGetReport() + "\n--- Vulkan surface clear/present test ---\n" + result);
                     }
                 });
             });
