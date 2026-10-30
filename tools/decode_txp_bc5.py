@@ -28,7 +28,7 @@ def decode_bc4_block(block: bytes) -> list[int]:
     return [palette[(indices >> (3 * pixel)) & 7] for pixel in range(16)]
 
 
-def decode_bc5(payload: bytes, width: int, height: int) -> tuple[bytes, bytes]:
+def decode_bc5(payload: bytes, width: int, height: int) -> bytes:
     if width % 4 or height % 4:
         raise ValueError("BC5 dimensions must be multiples of 4")
     expected = (width // 4) * (height // 4) * 16
@@ -99,6 +99,8 @@ def main() -> int:
     parser.add_argument("--record", type=int, default=2,
                         help="Zero-based TXP type-2 record index (default: 2)")
     parser.add_argument("--out", type=Path, default=Path("txp_record_02_rg.png"))
+    parser.add_argument("--channels", action="store_true",
+                        help="Also write separate grayscale R and G channel previews")
     args = parser.parse_args()
     records = find_records(args.binary.read_bytes())
     if not 0 <= args.record < len(records):
@@ -109,12 +111,26 @@ def main() -> int:
     rgb = decode_bc5(record["payload"], record["width"], record["height"])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     write_png_rgb(args.out, record["width"], record["height"], rgb)
+    channel_paths = {}
+    if args.channels:
+        red = bytearray(len(rgb))
+        green = bytearray(len(rgb))
+        for pixel in range(record["width"] * record["height"]):
+            r, g = rgb[pixel * 3], rgb[pixel * 3 + 1]
+            red[pixel * 3:pixel * 3 + 3] = bytes((r, r, r))
+            green[pixel * 3:pixel * 3 + 3] = bytes((g, g, g))
+        red_path = args.out.with_name(args.out.stem + "_r.png")
+        green_path = args.out.with_name(args.out.stem + "_g.png")
+        write_png_rgb(red_path, record["width"], record["height"], bytes(red))
+        write_png_rgb(green_path, record["width"], record["height"], bytes(green))
+        channel_paths = {"r": str(red_path), "g": str(green_path)}
     print(json.dumps({
         "record_index": args.record, "record_offset": record["offset"],
         "width": record["width"], "height": record["height"],
         "format_id": record["format_id"], "payload_bytes": len(record["payload"]),
         "decoder": "BC5_UNORM_candidate", "preview": str(args.out),
         "preview_channels": "R shown as red; G shown as green; B set to zero",
+        "separate_channel_previews": channel_paths,
         "warning": "Candidate BC5 decode; validate format/layout against runtime reference before shipping."
     }, ensure_ascii=False, indent=2))
     return 0
