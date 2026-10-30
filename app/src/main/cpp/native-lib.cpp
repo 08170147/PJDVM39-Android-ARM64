@@ -5,12 +5,90 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
 #include <algorithm>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #define LOG_TAG "PJDVM39Port"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+
+static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, VkQueue queue, uint32_t family) {
+    std::ostringstream out;
+    VkFormatProperties fp{};
+    vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_BC5_UNORM_BLOCK, &fp);
+    const auto required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    if ((fp.optimalTilingFeatures & required) != required) return "BC5 upload fixture: SKIP (format features unavailable)\n";
+    VkBuffer buffer = VK_NULL_HANDLE; VkDeviceMemory bufferMem = VK_NULL_HANDLE;
+    VkImage image = VK_NULL_HANDLE; VkDeviceMemory imageMem = VK_NULL_HANDLE;
+    VkCommandPool pool = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE;
+    bool passed = false;
+    auto memType = [&](uint32_t bits, VkMemoryPropertyFlags flags, uint32_t& index) {
+        VkPhysicalDeviceMemoryProperties p{}; vkGetPhysicalDeviceMemoryProperties(physical, &p);
+        for (uint32_t i=0;i<p.memoryTypeCount;i++) if ((bits&(1u<<i)) && (p.memoryTypes[i].propertyFlags&flags)==flags) { index=i; return true; }
+        return false;
+    };
+    auto err = [&](const char* op, VkResult r) { out << "BC5 upload fixture: " << op << " failed VkResult=" << int(r) << "\n"; };
+    do {
+        const uint8_t block[16] = {255,0,0,0,0,0,0,0, 255,0,0,0,0,0,0,0};
+        VkBufferCreateInfo b{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO}; b.size=16; b.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT; b.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+        VkResult r=vkCreateBuffer(device,&b,nullptr,&buffer); if(r!=VK_SUCCESS){err("vkCreateBuffer",r);break;}
+        VkMemoryRequirements br{}; vkGetBufferMemoryRequirements(device,buffer,&br);
+        uint32_t mt=0; if(!memType(br.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,mt)){out<<"BC5 upload fixture: no coherent host memory\n";break;}
+        VkMemoryAllocateInfo ma{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; ma.allocationSize=br.size; ma.memoryTypeIndex=mt;
+        r=vkAllocateMemory(device,&ma,nullptr,&bufferMem); if(r!=VK_SUCCESS){err("staging allocate",r);break;}
+        r=vkBindBufferMemory(device,buffer,bufferMem,0); if(r!=VK_SUCCESS){err("bind staging",r);break;}
+        void* data=nullptr; r=vkMapMemory(device,bufferMem,0,16,0,&data); if(r!=VK_SUCCESS){err("map staging",r);break;}
+        memcpy(data,block,16); vkUnmapMemory(device,bufferMem);
+
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; ii.imageType=VK_IMAGE_TYPE_2D; ii.format=VK_FORMAT_BC5_UNORM_BLOCK;
+        ii.extent={4,4,1}; ii.mipLevels=1; ii.arrayLayers=1; ii.samples=VK_SAMPLE_COUNT_1_BIT; ii.tiling=VK_IMAGE_TILING_OPTIMAL;
+        ii.usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT; ii.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+        r=vkCreateImage(device,&ii,nullptr,&image); if(r!=VK_SUCCESS){err("vkCreateImage BC5",r);break;}
+        VkMemoryRequirements ir{}; vkGetImageMemoryRequirements(device,image,&ir);
+        if(!memType(ir.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,mt)){out<<"BC5 upload fixture: no device-local image memory\n";break;}
+        ma.allocationSize=ir.size; ma.memoryTypeIndex=mt;
+        r=vkAllocateMemory(device,&ma,nullptr,&imageMem); if(r!=VK_SUCCESS){err("image allocate",r);break;}
+        r=vkBindImageMemory(device,image,imageMem,0); if(r!=VK_SUCCESS){err("bind image",r);break;}
+
+        VkCommandPoolCreateInfo pc{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO}; pc.queueFamilyIndex=family;
+        r=vkCreateCommandPool(device,&pc,nullptr,&pool); if(r!=VK_SUCCESS){err("command pool",r);break;}
+        VkCommandBuffer cmd=VK_NULL_HANDLE; VkCommandBufferAllocateInfo ac{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ac.commandPool=pool; ac.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY; ac.commandBufferCount=1;
+        r=vkAllocateCommandBuffers(device,&ac,&cmd); if(r!=VK_SUCCESS){err("allocate command buffer",r);break;}
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO}; begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        r=vkBeginCommandBuffer(cmd,&begin); if(r!=VK_SUCCESS){err("begin command buffer",r);break;}
+        VkImageMemoryBarrier toDst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER}; toDst.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        toDst.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED; toDst.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toDst.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; toDst.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; toDst.image=image;
+        toDst.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+        vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,1,&toDst);
+        VkBufferImageCopy region{}; region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; region.imageExtent={4,4,1};
+        vkCmdCopyBufferToImage(cmd,buffer,image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&region);
+        VkImageMemoryBarrier toRead{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER}; toRead.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        toRead.dstAccessMask=VK_ACCESS_SHADER_READ_BIT; toRead.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toRead.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; toRead.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
+        toRead.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; toRead.image=image; toRead.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+        vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&toRead);
+        r=vkEndCommandBuffer(cmd); if(r!=VK_SUCCESS){err("end command buffer",r);break;}
+        VkFenceCreateInfo fc{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; r=vkCreateFence(device,&fc,nullptr,&fence); if(r!=VK_SUCCESS){err("fence",r);break;}
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO}; si.commandBufferCount=1; si.pCommandBuffers=&cmd;
+        r=vkQueueSubmit(queue,1,&si,fence); if(r!=VK_SUCCESS){err("queue submit",r);break;}
+        r=vkWaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX); if(r!=VK_SUCCESS){err("wait fence",r);break;}
+        passed=true;
+        out<<"PASS: 4x4 BC5 block (16 bytes) staged and uploaded; layout UNDEFINED -> TRANSFER_DST -> SHADER_READ_ONLY\n";
+    } while(false);
+    if(device) vkDeviceWaitIdle(device);
+    if(fence) vkDestroyFence(device,fence,nullptr);
+    if(pool) vkDestroyCommandPool(device,pool,nullptr);
+    if(image) vkDestroyImage(device,image,nullptr);
+    if(imageMem) vkFreeMemory(device,imageMem,nullptr);
+    if(buffer) vkDestroyBuffer(device,buffer,nullptr);
+    if(bufferMem) vkFreeMemory(device,bufferMem,nullptr);
+    if(!passed && out.str().empty()) out<<"BC5 upload fixture: FAILED\n";
+    return out.str();
+}
 
 static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth, uint32_t requestedHeight) {
     std::ostringstream out;
@@ -86,6 +164,7 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci; dci.enabledExtensionCount = 1; dci.ppEnabledExtensionNames = deviceExts;
         if (!check(vkCreateDevice(physical, &dci, nullptr, &device), "vkCreateDevice")) break;
         vkGetDeviceQueue(device, family, 0, &queue);
+        out << uploadBc5Fixture(physical, device, queue, family);
         VkSurfaceCapabilitiesKHR caps{};
         if (!check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps), "surface capabilities")) break;
         uint32_t formatCount = 0;
