@@ -51,3 +51,7 @@ The per-shader JSON notes explicitly leave visual/input validation pending. A wo
 Build a read-only metadata exporter that converts the 808 shader records into a machine-readable Android port checklist (package, stage, library key, entry point, resource bindings, vertex inputs, raster/depth/color state, and validation notes). Then select a small, representative group of shaders (simple copy, basic material, particle, and UI) for a Vulkan proof of concept.
 
 Do not label the result a game port until the renderer, resource loading, input/audio services, and actual gameplay have been validated on an Android device.
+
+## Metadata exporter validation
+
+The repository now includes `tools/export_shader_inventory.py`. It was run against the supplied Build 19 IPA and successfully resolved all 808 shader-map rows to per-shader JSON metadata (808 exported, 0 missing). This confirms the metadata join is complete for this build; it does not validate Metal-to-Vulkan translation or runtime visuals.
