@@ -30,6 +30,22 @@ See [`docs/IPA-0.1.5b19-audit.md`](docs/IPA-0.1.5b19-audit.md) for verified find
 - [Mach-O custom section inventory](docs/EXECUTABLE-SECTION-INVENTORY.md): verified section names/sizes and porting implications.
 - [Renderer/resource inventory](docs/RENDERER-RESOURCE-INVENTORY.md): verified Metal cache, shader-map, controller-glyph, and package-catalog counts.
 
+## ExitMenu BC5 extraction (Build 19)
+
+With the original Build 19 IPA available locally, extract the observed 2048x2048
+ExitMenu texture candidate directly into the Android assets directory:
+
+```bash
+python3 tools/extract_exitmenu_bc5_from_ipa.py /path/to/PJDVM39-0.1.5b19-iOS-unsigned.ipa
+```
+
+The helper validates the observed English FArC gzip container, TXP record
+boundaries, candidate dimensions/format ID, and exact 4,194,304-byte payload.
+It writes `app/src/main/assets/pjdvm39/exitmenu_2048x2048.bc5` and a JSON
+hash report. The format-ID-to-BC5 mapping, channel swizzle, UV/layout, and
+mipmap behavior remain hypotheses requiring runtime validation. The extracted
+asset is not included in this repository; users must provide their own IPA.
+
 ## Shader metadata export
 The metadata-only exporter can turn the IPA's shader map and per-library JSON into a local checklist without copying Metal binaries or game archives:
 
