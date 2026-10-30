@@ -16,7 +16,17 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 
-static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, VkQueue queue, uint32_t family) {
+struct Bc5SampleResources {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+};
+
+static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, VkQueue queue, uint32_t family,
+                                    VkDescriptorSetLayout descriptorLayout, Bc5SampleResources& sample) {
     std::ostringstream out;
     VkFormatProperties fp{};
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_BC5_UNORM_BLOCK, &fp);
@@ -26,7 +36,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     VkImage image = VK_NULL_HANDLE; VkDeviceMemory imageMem = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE;
     VkImageView imageView = VK_NULL_HANDLE; VkSampler sampler = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE; VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     bool passed = false;
     auto memType = [&](uint32_t bits, VkMemoryPropertyFlags flags, uint32_t& index) {
         VkPhysicalDeviceMemoryProperties p{}; vkGetPhysicalDeviceMemoryProperties(physical, &p);
@@ -96,17 +106,6 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         r = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
         if (r != VK_SUCCESS) { err("vkCreateSampler BC5", r); break; }
 
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
-        r = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorLayout);
-        if (r != VK_SUCCESS) { err("vkCreateDescriptorSetLayout BC5", r); break; }
-
         VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
         VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.maxSets = 1;
@@ -144,7 +143,6 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     } while(false);
     if(device) vkDeviceWaitIdle(device);
     if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
-    if(descriptorLayout) vkDestroyDescriptorSetLayout(device,descriptorLayout,nullptr);
     if(sampler) vkDestroySampler(device,sampler,nullptr);
     if(imageView) vkDestroyImageView(device,imageView,nullptr);
     if(fence) vkDestroyFence(device,fence,nullptr);
@@ -186,6 +184,7 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
     VkDescriptorSetLayout sampleSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout samplePipelineLayout = VK_NULL_HANDLE;
     VkPipeline samplePipeline = VK_NULL_HANDLE;
+    Bc5SampleResources bc5;
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkSemaphore acquired = VK_NULL_HANDLE, rendered = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
@@ -252,8 +251,6 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci; dci.enabledExtensionCount = 1; dci.ppEnabledExtensionNames = deviceExts;
         if (!check(vkCreateDevice(physical, &dci, nullptr, &device), "vkCreateDevice")) break;
         vkGetDeviceQueue(device, family, 0, &queue);
-        out << uploadBc5Fixture(physical, device, queue, family);
-
         std::vector<uint32_t> vertexSpirv, fragmentSpirv;
         std::string assetError;
         const bool vertexLoaded = readSpirvAsset(assets, "pjdvm39/bc5_sample.vert.spv", vertexSpirv, assetError);
@@ -334,6 +331,9 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         sampleSetInfo.pBindings = &sampleBinding;
         if (!check(vkCreateDescriptorSetLayout(device, &sampleSetInfo, nullptr, &sampleSetLayout),
                    "vkCreateDescriptorSetLayout sample")) break;
+
+        out << uploadBc5Fixture(physical, device, queue, family, sampleSetLayout, bc5);
+        if (!bc5.image || !bc5.descriptorSet) break;
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pipelineLayoutInfo.setLayoutCount = 1;
@@ -417,7 +417,12 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         VkClearValue clear{}; clear.color.float32[0] = 0.035f; clear.color.float32[1] = 0.12f; clear.color.float32[2] = 0.24f; clear.color.float32[3] = 1.0f;
         VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO}; rbi.renderPass = renderPass; rbi.framebuffer = framebuffers[imageIndex];
         rbi.renderArea.extent = extent; rbi.clearValueCount = 1; rbi.pClearValues = &clear;
-        vkCmdBeginRenderPass(commands[imageIndex], &rbi, VK_SUBPASS_CONTENTS_INLINE); vkCmdEndRenderPass(commands[imageIndex]);
+        vkCmdBeginRenderPass(commands[imageIndex], &rbi, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commands[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, samplePipeline);
+        vkCmdBindDescriptorSets(commands[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                samplePipelineLayout, 0, 1, &bc5.descriptorSet, 0, nullptr);
+        vkCmdDraw(commands[imageIndex], 3, 1, 0, 0);
+        vkCmdEndRenderPass(commands[imageIndex]);
         if (!check(vkEndCommandBuffer(commands[imageIndex]), "vkEndCommandBuffer")) break;
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.waitSemaphoreCount = 1; submit.pWaitSemaphores = &acquired;
@@ -427,13 +432,18 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR}; pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &rendered;
         pi.swapchainCount = 1; pi.pSwapchains = &swapchain; pi.pImageIndices = &imageIndex;
         VkResult pr = vkQueuePresentKHR(queue, &pi);
-        if (pr == VK_SUCCESS || pr == VK_SUBOPTIMAL_KHR) out << "PASS: Vulkan frame cleared and presented at " << extent.width << "x" << extent.height << (pr == VK_SUBOPTIMAL_KHR || arq == VK_SUBOPTIMAL_KHR ? " (suboptimal swapchain)" : "") << "\n";
+        if (pr == VK_SUCCESS || pr == VK_SUBOPTIMAL_KHR) out << "PASS: BC5 fullscreen triangle drawn and presented at " << extent.width << "x" << extent.height << (pr == VK_SUBOPTIMAL_KHR || arq == VK_SUBOPTIMAL_KHR ? " (suboptimal swapchain)" : "") << "\n";
         else out << "vkQueuePresentKHR failed: VkResult=" << static_cast<int>(pr) << "\n";
         VkResult idle = vkQueueWaitIdle(queue); if (idle != VK_SUCCESS) out << "vkQueueWaitIdle failed: VkResult=" << static_cast<int>(idle) << "\n";
     } while (false);
     if (device) vkDeviceWaitIdle(device);
     if (samplePipeline && device) vkDestroyPipeline(device, samplePipeline, nullptr);
     if (samplePipelineLayout && device) vkDestroyPipelineLayout(device, samplePipelineLayout, nullptr);
+    if (bc5.descriptorPool && device) vkDestroyDescriptorPool(device, bc5.descriptorPool, nullptr);
+    if (bc5.sampler && device) vkDestroySampler(device, bc5.sampler, nullptr);
+    if (bc5.view && device) vkDestroyImageView(device, bc5.view, nullptr);
+    if (bc5.image && device) vkDestroyImage(device, bc5.image, nullptr);
+    if (bc5.memory && device) vkFreeMemory(device, bc5.memory, nullptr);
     if (sampleSetLayout && device) vkDestroyDescriptorSetLayout(device, sampleSetLayout, nullptr);
     if (fragmentShaderModule && device) vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
     if (vertexShaderModule && device) vkDestroyShaderModule(device, vertexShaderModule, nullptr);
