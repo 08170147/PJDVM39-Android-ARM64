@@ -179,6 +179,9 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
     VkShaderModule vertexShaderModule = VK_NULL_HANDLE, fragmentShaderModule = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkRenderPass renderPass = VK_NULL_HANDLE;
+    VkDescriptorSetLayout sampleSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout samplePipelineLayout = VK_NULL_HANDLE;
+    VkPipeline samplePipeline = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkSemaphore acquired = VK_NULL_HANDLE, rendered = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
@@ -315,6 +318,77 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         VkSubpassDescription sub{}; sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; sub.colorAttachmentCount = 1; sub.pColorAttachments = &ar;
         VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO}; rp.attachmentCount = 1; rp.pAttachments = &att; rp.subpassCount = 1; rp.pSubpasses = &sub;
         if (!check(vkCreateRenderPass(device, &rp, nullptr, &renderPass), "vkCreateRenderPass")) break;
+
+        // Match set=0,binding=0 combined sampler declared by bc5_sample.frag.
+        VkDescriptorSetLayoutBinding sampleBinding{};
+        sampleBinding.binding = 0;
+        sampleBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        sampleBinding.descriptorCount = 1;
+        sampleBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo sampleSetInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        sampleSetInfo.bindingCount = 1;
+        sampleSetInfo.pBindings = &sampleBinding;
+        if (!check(vkCreateDescriptorSetLayout(device, &sampleSetInfo, nullptr, &sampleSetLayout),
+                   "vkCreateDescriptorSetLayout sample")) break;
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = &sampleSetLayout;
+        if (!check(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &samplePipelineLayout),
+                   "vkCreatePipelineLayout sample")) break;
+
+        VkPipelineShaderStageCreateInfo shaderStages[2]{};
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        shaderStages[0].module = vertexShaderModule;
+        shaderStages[0].pName = "main";
+        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shaderStages[1].module = fragmentShaderModule;
+        shaderStages[1].pName = "main";
+
+        VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkViewport viewport{};
+        viewport.width = static_cast<float>(extent.width);
+        viewport.height = static_cast<float>(extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        VkRect2D scissor{{0, 0}, extent};
+        VkPipelineViewportStateCreateInfo viewportState{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        viewportState.viewportCount = 1;
+        viewportState.pViewports = &viewport;
+        viewportState.scissorCount = 1;
+        viewportState.pScissors = &scissor;
+        VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode = VK_CULL_MODE_NONE;
+        raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        raster.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineColorBlendAttachmentState blendAttachment{};
+        blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        blend.attachmentCount = 1;
+        blend.pAttachments = &blendAttachment;
+        VkGraphicsPipelineCreateInfo pipelineInfo{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInput;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &raster;
+        pipelineInfo.pMultisampleState = &multisample;
+        pipelineInfo.pColorBlendState = &blend;
+        pipelineInfo.layout = samplePipelineLayout;
+        pipelineInfo.renderPass = renderPass;
+        pipelineInfo.subpass = 0;
+        if (!check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &samplePipeline),
+                   "vkCreateGraphicsPipelines BC5 sample")) break;
+        out << "PASS: graphics pipeline object created; draw and descriptor binding not yet tested\\n";
         bool allFramebuffers = true;
         for (uint32_t i = 0; i < n; ++i) {
             VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
@@ -354,6 +428,9 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         VkResult idle = vkQueueWaitIdle(queue); if (idle != VK_SUCCESS) out << "vkQueueWaitIdle failed: VkResult=" << static_cast<int>(idle) << "\n";
     } while (false);
     if (device) vkDeviceWaitIdle(device);
+    if (samplePipeline && device) vkDestroyPipeline(device, samplePipeline, nullptr);
+    if (samplePipelineLayout && device) vkDestroyPipelineLayout(device, samplePipelineLayout, nullptr);
+    if (sampleSetLayout && device) vkDestroyDescriptorSetLayout(device, sampleSetLayout, nullptr);
     if (fragmentShaderModule && device) vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
     if (vertexShaderModule && device) vkDestroyShaderModule(device, vertexShaderModule, nullptr);
     if (commandPool && device) vkDestroyCommandPool(device, commandPool, nullptr);
