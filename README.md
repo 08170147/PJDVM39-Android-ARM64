@@ -5,8 +5,9 @@ Infrastructure-only Android starter project, not a playable game port.
 ## Current scope
 - Android Java Activity + C++ JNI native library.
 - ARM64-only build configuration (`arm64-v8a`).
-- One-shot Vulkan Android surface smoke test: create instance/surface, choose a graphics-and-present queue, clear a swapchain image, and present once.
+- One-shot Vulkan Android surface test: upload an optional 2048x2048 BC5 ExitMenu candidate (or a 4x4 synthetic fallback), sample it through a descriptor-backed graphics pipeline, draw a fullscreen triangle, and present one swapchain image.
 - Vulkan capability / device probe reports in the app UI.
+- BC5 image upload, image view, sampler, descriptor binding, shader sampling, and fullscreen draw are exercised by the one-frame diagnostic path.
 - Shader migration research, audit reports, and helper scripts.
 
 ## Build prerequisites
@@ -18,7 +19,7 @@ Infrastructure-only Android starter project, not a playable game port.
 Open this repository root in Android Studio, sync Gradle, then build the `app` debug variant. For CI, the GitHub Actions workflow in `.github/workflows/android-smoke.yml` attempts to build and upload the debug APK artifact.
 
 ## Limitations
-- The Vulkan path is a one-shot clear/present test, not a game renderer.
+- The Vulkan path is a one-shot BC5 diagnostic draw/present test, not a game renderer.
 - No original game executable is linked or run.
 - No complete NVN-to-Vulkan translation or general MSL-to-SPIR-V compiler is implemented.
 - No game package, ROMFS, DLC, or save files are included.
