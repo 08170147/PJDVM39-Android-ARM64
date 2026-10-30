@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <android/log.h>
 #include <android/native_window_jni.h>
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
 #define VK_USE_PLATFORM_ANDROID_KHR 1
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
@@ -151,12 +153,30 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     return out.str();
 }
 
-static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth, uint32_t requestedHeight) {
+
+static bool readSpirvAsset(AAssetManager* manager, const char* path, std::vector<uint32_t>& words, std::string& error) {
+    if (!manager) { error = "AssetManager unavailable"; return false; }
+    AAsset* asset = AAssetManager_open(manager, path, AASSET_MODE_BUFFER);
+    if (!asset) { error = std::string("asset not found: ") + path; return false; }
+    const off_t length = AAsset_getLength(asset);
+    if (length < 20 || (length % 4) != 0) {
+        AAsset_close(asset); error = std::string("invalid SPIR-V byte length: ") + path; return false;
+    }
+    words.resize(static_cast<size_t>(length) / sizeof(uint32_t));
+    const int bytesRead = AAsset_read(asset, words.data(), static_cast<size_t>(length));
+    AAsset_close(asset);
+    if (bytesRead != length) { words.clear(); error = std::string("short read: ") + path; return false; }
+    if (words[0] != 0x07230203u) { words.clear(); error = std::string("bad SPIR-V magic: ") + path; return false; }
+    return true;
+}
+
+static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth, uint32_t requestedHeight, AAssetManager* assets) {
     std::ostringstream out;
     if (!window) return "ANativeWindow_fromSurface failed.\n";
     VkInstance instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
+    VkShaderModule vertexShaderModule = VK_NULL_HANDLE, fragmentShaderModule = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -226,6 +246,28 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         if (!check(vkCreateDevice(physical, &dci, nullptr, &device), "vkCreateDevice")) break;
         vkGetDeviceQueue(device, family, 0, &queue);
         out << uploadBc5Fixture(physical, device, queue, family);
+
+        std::vector<uint32_t> vertexSpirv, fragmentSpirv;
+        std::string assetError;
+        const bool vertexLoaded = readSpirvAsset(assets, "pjdvm39/bc5_sample.vert.spv", vertexSpirv, assetError);
+        if (!vertexLoaded) out << "Vertex SPIR-V asset: FAIL (" << assetError << ")\\n";
+        else out << "Vertex SPIR-V asset: PASS (" << vertexSpirv.size() * 4 << " bytes)\\n";
+        assetError.clear();
+        const bool fragmentLoaded = readSpirvAsset(assets, "pjdvm39/bc5_sample.frag.spv", fragmentSpirv, assetError);
+        if (!fragmentLoaded) out << "Fragment SPIR-V asset: FAIL (" << assetError << ")\\n";
+        else out << "Fragment SPIR-V asset: PASS (" << fragmentSpirv.size() * 4 << " bytes)\\n";
+        if (vertexLoaded && fragmentLoaded) {
+            VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+            sm.codeSize = vertexSpirv.size() * sizeof(uint32_t); sm.pCode = vertexSpirv.data();
+            VkResult shaderResult = vkCreateShaderModule(device, &sm, nullptr, &vertexShaderModule);
+            if (shaderResult != VK_SUCCESS) out << "Vertex vkCreateShaderModule: FAIL VkResult=" << int(shaderResult) << "\\n";
+            else {
+                sm.codeSize = fragmentSpirv.size() * sizeof(uint32_t); sm.pCode = fragmentSpirv.data();
+                shaderResult = vkCreateShaderModule(device, &sm, nullptr, &fragmentShaderModule);
+                if (shaderResult != VK_SUCCESS) out << "Fragment vkCreateShaderModule: FAIL VkResult=" << int(shaderResult) << "\\n";
+                else out << "PASS: both SPIR-V modules accepted by Vulkan vkCreateShaderModule; pipeline/draw not yet tested\\n";
+            }
+        }
         VkSurfaceCapabilitiesKHR caps{};
         if (!check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps), "surface capabilities")) break;
         uint32_t formatCount = 0;
@@ -312,6 +354,8 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         VkResult idle = vkQueueWaitIdle(queue); if (idle != VK_SUCCESS) out << "vkQueueWaitIdle failed: VkResult=" << static_cast<int>(idle) << "\n";
     } while (false);
     if (device) vkDeviceWaitIdle(device);
+    if (fragmentShaderModule && device) vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
+    if (vertexShaderModule && device) vkDestroyShaderModule(device, vertexShaderModule, nullptr);
     if (commandPool && device) vkDestroyCommandPool(device, commandPool, nullptr);
     for (auto fb : framebuffers) if (fb && device) vkDestroyFramebuffer(device, fb, nullptr);
     if (renderPass && device) vkDestroyRenderPass(device, renderPass, nullptr);
@@ -391,10 +435,11 @@ Java_com_local_pjdvm39_MainActivity_nativeGetReport(JNIEnv* env, jclass) {
     return env->NewStringUTF(out.str().c_str());
 }
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_local_pjdvm39_MainActivity_nativeRenderFrame(JNIEnv* env, jclass, jobject javaSurface, jint width, jint height) {
+Java_com_local_pjdvm39_MainActivity_nativeRenderFrame(JNIEnv* env, jclass, jobject javaSurface, jint width, jint height, jobject javaAssetManager) {
     ANativeWindow* window = ANativeWindow_fromSurface(env, javaSurface);
+    AAssetManager* assets = AAssetManager_fromJava(env, javaAssetManager);
     if (!window) return env->NewStringUTF("ANativeWindow_fromSurface failed.");
-    const std::string result = renderOneFrame(window, static_cast<uint32_t>(std::max(0, width)), static_cast<uint32_t>(std::max(0, height)));
+    const std::string result = renderOneFrame(window, static_cast<uint32_t>(std::max(0, width)), static_cast<uint32_t>(std::max(0, height)), assets);
     ANativeWindow_release(window);
     LOGI("One-frame Vulkan test finished");
     return env->NewStringUTF(result.c_str());
