@@ -58,7 +58,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
             renderExecutor.execute(() -> {
                 if (activityDestroyed || generation != surfaceGeneration.get() || !surface.isValid()) return;
                 // Vulkan setup and presentation can block; never run them on the UI thread.
-                final String result = nativeRenderFrame(surface, frameWidth, frameHeight);
+                final String result = nativeRenderFrame(surface, frameWidth, frameHeight, getAssets());
                 runOnUiThread(() -> {
                     if (!activityDestroyed && generation == surfaceGeneration.get()
                             && surfaceView != null && surfaceView.getHolder().getSurface().isValid()) {
@@ -83,6 +83,6 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
     }
 
     private static native String nativeGetReport();
-    private static native String nativeRenderFrame(Surface surface, int width, int height);
+    private static native String nativeRenderFrame(Surface surface, int width, int height, android.content.res.AssetManager assets);
     static { System.loadLibrary("pjdvm39_port"); }
 }
