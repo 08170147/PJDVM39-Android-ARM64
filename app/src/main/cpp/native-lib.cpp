@@ -24,6 +24,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
     VkImage image = VK_NULL_HANDLE; VkDeviceMemory imageMem = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE;
     VkImageView imageView = VK_NULL_HANDLE; VkSampler sampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE; VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     bool passed = false;
     auto memType = [&](uint32_t bits, VkMemoryPropertyFlags flags, uint32_t& index) {
         VkPhysicalDeviceMemoryProperties p{}; vkGetPhysicalDeviceMemoryProperties(physical, &p);
@@ -93,10 +94,51 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         r = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
         if (r != VK_SUCCESS) { err("vkCreateSampler BC5", r); break; }
 
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &binding;
+        r = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorLayout);
+        if (r != VK_SUCCESS) { err("vkCreateDescriptorSetLayout BC5", r); break; }
+
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = 1;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        r = vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
+        if (r != VK_SUCCESS) { err("vkCreateDescriptorPool BC5", r); break; }
+
+        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+        VkDescriptorSetAllocateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        setInfo.descriptorPool = descriptorPool;
+        setInfo.descriptorSetCount = 1;
+        setInfo.pSetLayouts = &descriptorLayout;
+        r = vkAllocateDescriptorSets(device, &setInfo, &descriptorSet);
+        if (r != VK_SUCCESS) { err("vkAllocateDescriptorSets BC5", r); break; }
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.sampler = sampler;
+        imageInfo.imageView = imageView;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = descriptorSet;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+
         passed=true;
         out<<"PASS: 4x4 BC5 block staged/uploaded; image view and sampler created; layout UNDEFINED -> TRANSFER_DST -> SHADER_READ_ONLY (shader sampling not yet tested)\n";
     } while(false);
     if(device) vkDeviceWaitIdle(device);
+    if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
+    if(descriptorLayout) vkDestroyDescriptorSetLayout(device,descriptorLayout,nullptr);
     if(sampler) vkDestroySampler(device,sampler,nullptr);
     if(imageView) vkDestroyImageView(device,imageView,nullptr);
     if(fence) vkDestroyFence(device,fence,nullptr);
