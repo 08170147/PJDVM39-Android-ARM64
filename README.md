@@ -29,3 +29,12 @@ See [`docs/IPA-0.1.5b19-audit.md`](docs/IPA-0.1.5b19-audit.md) for verified find
 ## Latest reverse-engineering notes
 - [Mach-O custom section inventory](docs/EXECUTABLE-SECTION-INVENTORY.md): verified section names/sizes and porting implications.
 - [Renderer/resource inventory](docs/RENDERER-RESOURCE-INVENTORY.md): verified Metal cache, shader-map, controller-glyph, and package-catalog counts.
+
+## Shader metadata export
+The metadata-only exporter can turn the IPA's shader map and per-library JSON into a local checklist without copying Metal binaries or game archives:
+
+```bash
+python3 tools/export_shader_inventory.py /path/to/PJDVM39-0.1.5b19-iOS-unsigned.ipa --out pjdvm39-shader-inventory.json
+```
+
+The exporter was tested against Build 19: 808/808 shader-map records resolved to per-shader metadata (0 missing). This is metadata coverage only, not Vulkan shader compatibility or visual validation.
