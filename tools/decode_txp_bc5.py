@@ -28,7 +28,7 @@ def decode_bc4_block(block: bytes) -> list[int]:
     return [palette[(indices >> (3 * pixel)) & 7] for pixel in range(16)]
 
 
-def decode_bc5(payload: bytes, width: int, height: int) -> bytes:
+def decode_bc5(payload: bytes, width: int, height: int) -> tuple[bytes, bytes]:
     if width % 4 or height % 4:
         raise ValueError("BC5 dimensions must be multiples of 4")
     expected = (width // 4) * (height // 4) * 16
