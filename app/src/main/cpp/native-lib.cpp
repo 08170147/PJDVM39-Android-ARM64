@@ -194,9 +194,62 @@ Java_com_local_pjdvm39_MainActivity_nativeGetReport(JNIEnv* env, jclass) {
     out << "Target ABI: arm64-v8a\n";
     out << "The test creates a Vulkan instance, chooses a graphics/present queue, clears one swapchain image, and presents once.\n";
     out << "No game data is bundled with this skeleton.\n";
+
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    app.pApplicationName = "PJDVM39 format capability probe";
+    app.applicationVersion = 1;
+    app.pEngineName = "PJDVM39Port";
+    app.engineVersion = 1;
+    app.apiVersion = VK_API_VERSION_1_0;
+    VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    createInfo.pApplicationInfo = &app;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+    if (result != VK_SUCCESS) {
+        out << "Texture format probe: vkCreateInstance failed, VkResult="
+            << static_cast<int>(result) << "\n";
+        return env->NewStringUTF(out.str().c_str());
+    }
+
+    uint32_t count = 0;
+    result = vkEnumeratePhysicalDevices(instance, &count, nullptr);
+    if (result != VK_SUCCESS || count == 0) {
+        out << "Texture format probe: no Vulkan physical devices; VkResult="
+            << static_cast<int>(result) << "\n";
+    } else {
+        std::vector<VkPhysicalDevice> devices(count);
+        result = vkEnumeratePhysicalDevices(instance, &count, devices.data());
+        if (result != VK_SUCCESS) {
+            out << "Texture format probe: device enumeration failed, VkResult="
+                << static_cast<int>(result) << "\n";
+        } else {
+            for (uint32_t i = 0; i < count; ++i) {
+                VkPhysicalDeviceProperties properties{};
+                vkGetPhysicalDeviceProperties(devices[i], &properties);
+                out << "Texture format probe GPU: " << properties.deviceName << "\n";
+                const VkFormat candidates[] = {
+                    VK_FORMAT_BC5_UNORM_BLOCK,
+                    VK_FORMAT_R8G8_UNORM
+                };
+                const char* names[] = { "BC5_UNORM_BLOCK", "R8G8_UNORM" };
+                for (size_t j = 0; j < 2; ++j) {
+                    VkFormatProperties formatProperties{};
+                    vkGetPhysicalDeviceFormatProperties(devices[i], candidates[j], &formatProperties);
+                    const VkFormatFeatureFlags optimal = formatProperties.optimalTilingFeatures;
+                    const bool sampled = (optimal & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
+                    const bool transferDst = (optimal & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
+                    out << "  " << names[j]
+                        << ": sampled=" << (sampled ? "yes" : "no")
+                        << ", transfer_dst=" << (transferDst ? "yes" : "no")
+                        << ", optimal_features=0x" << std::hex << optimal << std::dec << "\n";
+                }
+            }
+        }
+    }
+    vkDestroyInstance(instance, nullptr);
+    out << "Note: format support is device-specific; this probe does not upload or render TXP textures.\n";
     return env->NewStringUTF(out.str().c_str());
 }
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_local_pjdvm39_MainActivity_nativeRenderFrame(JNIEnv* env, jclass, jobject javaSurface, jint width, jint height) {
     ANativeWindow* window = ANativeWindow_fromSurface(env, javaSurface);
