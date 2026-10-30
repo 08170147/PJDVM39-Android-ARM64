@@ -1,6 +1,7 @@
 plugins { id 'com.android.application' }
 
 android {
+    sourceSets { main { assets.srcDir "$buildDir/generated/assets" } }
     namespace 'com.local.pjdvm39'
     compileSdk 35
 
