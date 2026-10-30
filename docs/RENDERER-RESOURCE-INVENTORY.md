@@ -55,3 +55,24 @@ Do not label the result a game port until the renderer, resource loading, input/
 ## Metadata exporter validation
 
 The repository now includes `tools/export_shader_inventory.py`. It was run against the supplied Build 19 IPA and successfully resolved all 808 shader-map rows to per-shader JSON metadata (808 exported, 0 missing). This confirms the metadata join is complete for this build; it does not validate Metal-to-Vulkan translation or runtime visuals.
+
+## Pipeline metadata profile
+
+Aggregating the 808 per-shader JSON records yields the following descriptor/pipeline planning counts:
+
+| Metadata field | Count |
+|---|---:|
+| Vertex-stage records | 404 |
+| Fragment-stage records | 404 |
+| Texture bindings (`tex`) | 2,374 |
+| Texture sampler bindings (`samp_tex`) | 2,374 |
+| Constant-buffer bindings (`cbuf`) | 2,143 |
+| `c1` bindings | 526 |
+| Support bindings | 51 |
+| Storage-buffer bindings (`sbuf`) | 6 |
+| Records declaring depth output/test state | 3 |
+| Records without depth state | 805 |
+
+Raster color metadata reports 298 fragment records with one color target and 106 with two. Vertex-input metadata is variable: 507 records list zero inputs, while the others list between 1 and 12 inputs.
+
+These are aggregate metadata counts, not counts of unique Vulkan descriptor-set layouts. The same logical binding may occur in many shader records, and Metal argument indices/register numbers must be mapped and validated before creating Vulkan layouts. The very small number of declared storage-buffer bindings and depth-enabled records is a useful prioritization signal, not proof that the game never uses those features elsewhere.
