@@ -7,6 +7,8 @@ if [[ -z "$IPA" || ! -f "$IPA" ]]; then
   echo "Usage: $0 /path/to/PJDVM39-0.1.5b19-iOS-unsigned.ipa" >&2
   exit 2
 fi
+# Resolve the IPA before changing to the repository root so relative input paths work.
+IPA="$(cd "$(dirname "$IPA")" && pwd)/$(basename "$IPA")"
 cd "$ROOT"
 
 ASSET="app/src/main/assets/pjdvm39/exitmenu_2048x2048.bc5"
