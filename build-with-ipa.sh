@@ -20,7 +20,7 @@ asset = pathlib.Path(sys.argv[1])
 report = json.loads(pathlib.Path(sys.argv[2]).read_text())
 digest = hashlib.sha256(asset.read_bytes()).hexdigest()
 assert asset.stat().st_size == 4_194_304, "unexpected BC5 payload size"
-assert report.get("sha256") == digest, "extract report SHA-256 mismatch"
+assert report.get("payload_sha256") == digest, "extract report SHA-256 mismatch"
 print(f"Verified local asset: {asset} ({asset.stat().st_size} bytes)")
 print(f"SHA-256: {digest}")
 PY
