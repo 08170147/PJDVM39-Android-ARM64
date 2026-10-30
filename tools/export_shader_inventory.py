@@ -28,7 +28,7 @@ def main() -> int:
     with zipfile.ZipFile(args.ipa) as archive:
         names = set(archive.namelist())
         shader_map_path = find_member(names, "RendererAssets/Shaders/shader_map.tsv")
-        preparation_path = find_member(names, "RendererAssets/MetalCache/preparation.json")
+        preparation_path = find_member(names, "/preparation.json")
         cache_dir = str(PurePosixPath(preparation_path).parent)
 
         rows = archive.read(shader_map_path).decode("utf-8-sig").splitlines()
