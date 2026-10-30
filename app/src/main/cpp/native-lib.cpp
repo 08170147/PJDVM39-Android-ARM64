@@ -164,7 +164,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         image = VK_NULL_HANDLE; imageMem = VK_NULL_HANDLE; imageView = VK_NULL_HANDLE;
         sampler = VK_NULL_HANDLE; descriptorPool = VK_NULL_HANDLE;
         passed=true;
-        out << (usingRealTexture ? "PASS: real 2048x2048 ExitMenu BC5 asset uploaded and descriptor set prepared\\n" : "PASS: synthetic 4x4 BC5 fixture uploaded; real TXP asset not packaged\\n");
+        out << (usingRealTexture ? "PASS: real 2048x2048 ExitMenu BC5 asset uploaded and descriptor set prepared\n" : "PASS: synthetic 4x4 BC5 fixture uploaded; real TXP asset not packaged\n");
     } while(false);
     if(device) vkDeviceWaitIdle(device);
     if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
@@ -494,10 +494,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_local_pjdvm39_MainActivity_nativeGetReport(JNIEnv* env, jclass) {
     std::ostringstream out;
     out << "PJDV M39 Android ARM64 port skeleton\n";
-    out << "Status: Vulkan surface clear/present smoke test; game renderer is NOT ported.\n";
+    out << "Status: Vulkan BC5 texture upload, sampling pipeline, fullscreen draw, and surface present diagnostic; game renderer is NOT ported.\n";
     out << "Target ABI: arm64-v8a\n";
-    out << "The test creates a Vulkan instance, chooses a graphics/present queue, clears one swapchain image, and presents once.\n";
-    out << "No game data is bundled with this skeleton.\n";
+    out << "The frame test optionally loads the raw ExitMenu BC5 asset, uploads it, samples it in a Vulkan graphics pipeline, draws a fullscreen triangle, and presents one swapchain image.\n";
+    out << "Real ExitMenu texture data is optional and must be placed at assets/pjdvm39/exitmenu_2048x2048.bc5; otherwise a synthetic fixture is used.\n";
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "PJDVM39 format capability probe";
