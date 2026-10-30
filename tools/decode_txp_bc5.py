@@ -59,9 +59,9 @@ def png_chunk(kind: bytes, payload: bytes) -> bytes:
 def write_png_rgb(path: Path, width: int, height: int, rgb: bytes) -> None:
     if len(rgb) != width * height * 3:
         raise ValueError("RGB buffer size mismatch")
-    raw = b"".join(b"\\x00" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
+    raw = b"".join(b"\x00" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
     png = (
-        b"\\x89PNG\\r\\n\\x1a\\n"
+        b"\x89PNG\r\n\x1a\n"
         + png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
         + png_chunk(b"IDAT", zlib.compress(raw, 9))
         + png_chunk(b"IEND", b"")
