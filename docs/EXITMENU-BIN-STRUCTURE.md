@@ -8,7 +8,7 @@ The FArC payload was decompressed using the gzip stream beginning at byte 48.
 - Decompressed file size: **31,790,320 bytes**.
 - SHA-256 is emitted by the included inspector for reproducibility.
 - First two little-endian 32-bit words: `0` and `4844 (0x12EC)`.
-- The region before byte `0x12EC` contains 70 printable ASCII identifier runs of at least four characters.
+- The region before byte `0x12EC` contains 73 printable ASCII identifier runs of at least four characters.
 - Those identifiers include menu-related names such as `CHARA_MAINMENU_01`, `SELECTOR_ARCADE_TXT`, `SELECTOR_OPTION`, `FOOTER_BACK`, and `KEY_MAINMENU_01`.
 - The byte sequence `TXP` occurs 22 times in the decompressed file. The first occurrence is at offset 4844.
 
