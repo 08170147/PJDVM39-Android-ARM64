@@ -19,12 +19,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Install shader validation tools
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools spirv-tools
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
       - name: Verify manifest and JNI declarations
         run: python3 ./verify-manifest.py
       - name: Verify project structure
         run: bash ./verify-project.sh
+      - name: Compile and validate BC5 diagnostic shaders
+        run: bash ./verify-shaders.sh
       - name: Build ARM64 debug APK
         run: gradle :app:assembleDebug
       - name: Verify merged Android manifest
