@@ -164,7 +164,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         image = VK_NULL_HANDLE; imageMem = VK_NULL_HANDLE; imageView = VK_NULL_HANDLE;
         sampler = VK_NULL_HANDLE; descriptorPool = VK_NULL_HANDLE;
         passed=true;
-        out<<"PASS: BC5 fixture uploaded and descriptor set prepared for sampling\n";
+        out << (usingRealTexture ? "PASS: real 2048x2048 ExitMenu BC5 asset uploaded and descriptor set prepared\\n" : "PASS: synthetic 4x4 BC5 fixture uploaded; real TXP asset not packaged\\n");
     } while(false);
     if(device) vkDeviceWaitIdle(device);
     if(descriptorPool) vkDestroyDescriptorPool(device,descriptorPool,nullptr);
