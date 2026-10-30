@@ -10,14 +10,14 @@ All five files share the observed 0x30-byte fixed header layout:
 | Offset | Width | Observed interpretation |
 |---:|---:|---|
 | `0x00` | 4 | ASCII magic `FArC` |
-| `0x04` | 4 | Big-endian value `36` |
-| `0x08` | 4 | Big-endian name-field width `16` |
-| `0x0C` | 16 | NUL-padded UTF-8 embedded name: `spr_nswgam_menu.bin` |
+| `0x04` | 4 | Opaque big-endian header word: `36` (meaning not established) |
+| `0x08` | 4 | Opaque big-endian header word: `16` (meaning not established) |
+| `0x0C` | 20 | NUL-padded UTF-8 embedded name: `spr_nswgam_menu.bin` |
 | `0x20` | 4 | Big-endian payload offset: `48` (`0x30`) |
 | `0x24` | 4 | Big-endian compressed payload length |
 | `0x28` | 4 | Big-endian expanded payload length |
 
-The payload begins at byte 48 and is a gzip stream. The compressed-size field
+The observed filename slot occupies bytes `0x0C..0x1F` (20 bytes). The semantics of the two header words at `0x04` and `0x08` are not established. The payload begins at byte 48 and is a gzip stream. The compressed-size field
 matches the bytes remaining after the header. The expanded-size field matches
 the actual gzip output for all five language variants.
 
