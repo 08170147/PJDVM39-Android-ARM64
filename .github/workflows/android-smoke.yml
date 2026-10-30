@@ -27,6 +27,8 @@ jobs:
         run: python3 ./verify-manifest.py
       - name: Verify project structure
         run: bash ./verify-project.sh
+      - name: Validate local IPA packaging helper
+        run: bash -n ./build-with-ipa.sh && python3 -m py_compile ./tools/extract_exitmenu_bc5_from_ipa.py
       - name: Compile and validate BC5 diagnostic shaders
         run: bash ./verify-shaders.sh
       - name: Build ARM64 debug APK
