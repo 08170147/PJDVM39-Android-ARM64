@@ -341,6 +341,10 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         if (!check(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &samplePipelineLayout),
                    "vkCreatePipelineLayout sample")) break;
 
+        if (!vertexShaderModule || !fragmentShaderModule) {
+            out << "Cannot create graphics pipeline: one or more shader modules are unavailable\\n";
+            break;
+        }
         VkPipelineShaderStageCreateInfo shaderStages[2]{};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
