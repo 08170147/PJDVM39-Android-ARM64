@@ -269,7 +269,7 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
                 sm.codeSize = fragmentSpirv.size() * sizeof(uint32_t); sm.pCode = fragmentSpirv.data();
                 shaderResult = vkCreateShaderModule(device, &sm, nullptr, &fragmentShaderModule);
                 if (shaderResult != VK_SUCCESS) out << "Fragment vkCreateShaderModule: FAIL VkResult=" << int(shaderResult) << "\\n";
-                else out << "PASS: both SPIR-V modules accepted by Vulkan vkCreateShaderModule; pipeline/draw not yet tested\\n";
+                else out << "PASS: both SPIR-V modules accepted by Vulkan vkCreateShaderModule; graphics pipeline and BC5 draw are exercised below\\n";
             }
         }
         VkSurfaceCapabilitiesKHR caps{};
@@ -396,7 +396,7 @@ static std::string renderOneFrame(ANativeWindow* window, uint32_t requestedWidth
         pipelineInfo.subpass = 0;
         if (!check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &samplePipeline),
                    "vkCreateGraphicsPipelines BC5 sample")) break;
-        out << "PASS: graphics pipeline object created; draw and descriptor binding not yet tested\\n";
+        out << "PASS: graphics pipeline object created; descriptor binding and vkCmdDraw are exercised below\\n";
         bool allFramebuffers = true;
         for (uint32_t i = 0; i < n; ++i) {
             VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
