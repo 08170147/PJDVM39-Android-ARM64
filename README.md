@@ -86,3 +86,18 @@ The exporter was tested against Build 19: 808/808 shader-map records resolved to
 - [Metal-to-Vulkan binding plan](docs/METAL-TO-VULKAN-BINDING-PLAN.md): verified shader binding counts, candidate Vulkan mappings, and unresolved translation requirements.
 - [ExitMenu FArC format notes](docs/EXITMENU-FARC-FORMAT.md) and [local inspector](tools/inspect_single_entry_farc.py): validates the observed single-entry gzip container without bundling game assets.
 - [ExitMenu BIN structure notes](docs/EXITMENU-BIN-STRUCTURE.md) and [BIN inspector](tools/inspect_exitmenu_bin.py): inventories resource-name strings and TXP marker offsets without claiming a full decoder.
+
+
+## Read-only Switch XCI inventory
+
+For a locally owned XCI image, inspect the card header and HFS0 partition/file
+directory without decrypting or extracting NCA content:
+
+```bash
+python3 tools/inspect_xci.py /path/to/your-game.xci --json xci_inventory.json
+```
+
+The report lists partition names and the NCA filenames/sizes visible in the
+secure partition. It does not verify title authenticity, decrypt NCA files,
+read console keys, or establish that the Android project can execute the game.
+Keep the XCI and any console keys local; do not commit them to this repository.
