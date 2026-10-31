@@ -30,6 +30,8 @@ See [`docs/IPA-0.1.5b19-audit.md`](docs/IPA-0.1.5b19-audit.md) for verified find
 ## Latest reverse-engineering notes
 - [Mach-O custom section inventory](docs/EXECUTABLE-SECTION-INVENTORY.md): verified section names/sizes and porting implications.
 - [Renderer/resource inventory](docs/RENDERER-RESOURCE-INVENTORY.md): verified Metal cache, shader-map, controller-glyph, and package-catalog counts.
+- [ExitMenu BC5 channel analysis](docs/EXITMENU-CHANNEL-ANALYSIS.md): candidate R/G channel interpretation and unresolved material behavior.
+- [ExitMenu localization comparison](docs/EXITMENU-LOCALIZATION-COMPARISON.md): shared TXP structure and language-specific payload hashes across five locales.
 
 ## ExitMenu BC5 extraction (Build 19)
 
@@ -58,6 +60,20 @@ This convenience script keeps the IPA, extracted texture, and extraction report
 local. It does not upload game data to GitHub. The CI workflow syntax-checks
 this helper; the actual IPA-based build must be run locally with the Android
 SDK/NDK and Gradle prerequisites installed.
+
+## Compare localized ExitMenu texture payloads
+
+Build 19 contains Chinese, Traditional Chinese, Korean, Japanese, and English
+ExitMenu resource folders. Compare their TXP2 records locally:
+
+```bash
+python3 tools/compare_exitmenu_locales.py /path/to/PJDVM39-0.1.5b19-iOS-unsigned.ipa --out exitmenu_locale_comparison.json
+```
+
+The comparison checks record counts, offsets, dimensions, format IDs, and
+payload hashes. See [the localization findings](docs/EXITMENU-LOCALIZATION-COMPARISON.md).
+It reports byte differences only; it does not assume that every changed texture
+is translated text.
 
 ## Shader metadata export
 The metadata-only exporter can turn the IPA's shader map and per-library JSON into a local checklist without copying Metal binaries or game archives:
