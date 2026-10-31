@@ -52,7 +52,7 @@ static std::string uploadBc5Fixture(VkPhysicalDevice physical, VkDevice device, 
         }
     }
     if (!usingRealTexture) {
-        const uint8_t fixture[16] = {255,0,0,0,0,0,0,0, 255,0,0,0,0,0,0,0};
+        const uint8_t fixture[16] = {64,64,0,0,0,0,0,0, 192,192,0,0,0,0,0,0};
         bc5Bytes.assign(fixture, fixture + sizeof(fixture));
     }
     const VkDeviceSize textureBytes = bc5Bytes.size();
