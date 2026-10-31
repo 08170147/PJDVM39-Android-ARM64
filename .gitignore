@@ -1,0 +1,27 @@
+﻿.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+*.apk
+*.aab
+*.ipa
+.DS_Store
+Thumbs.db
+
+# Android native build cache
+.cxx/
+**/.cxx/
+
+# Local-only game assets
+app/src/main/assets/pjdvm39/exitmenu_2048x2048.bc5
+
+# Nested duplicate project
+/PJDVM39-Android-ARM64-main/
+
+# Local backups
+*.bak
+*.bak-*
+*.backup
+*.backup-*
+*.smoke.bak

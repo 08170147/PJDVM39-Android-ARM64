@@ -1,47 +1,93 @@
-name: Android ARM64 smoke checks
+name: Android ARM64 Build
+
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: ''
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-      - name: Install shader validation tools
-        run: sudo apt-get update && sudo apt-get install -y glslang-tools spirv-tools
+
+      - name: Locate Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          "$SDKMANAGER" --version
+
       - name: Install Android build dependencies
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+        run: |
+          SDKMANAGER="$(command -v sdkmanager)"
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install shader validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools spirv-tools
+
+      - name: Prepare Gradle Wrapper
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
+
       - name: Verify manifest and JNI declarations
         run: python3 ./verify-manifest.py
+
       - name: Verify project structure
         run: bash ./verify-project.sh
-      - name: Validate local IPA packaging helper
-        run: bash -n ./build-with-ipa.sh && python3 -m py_compile ./tools/extract_exitmenu_bc5_from_ipa.py
+
+      - name: Validate IPA packaging helper
+        run: |
+          bash -n ./build-with-ipa.sh
+          python3 -m py_compile ./tools/extract_exitmenu_bc5_from_ipa.py
+
       - name: Test TXP BC5 gallery exporter
-        run: python3 -m py_compile ./tools/decode_txp_bc5.py ./tools/export_txp_gallery.py && python3 -m unittest discover -s tests -v
+        run: |
+          python3 -m py_compile ./tools/decode_txp_bc5.py ./tools/export_txp_gallery.py
+          python3 -m unittest discover -s tests -v
+
       - name: Compile and validate BC5 diagnostic shaders
         run: bash ./verify-shaders.sh
+
       - name: Build ARM64 debug APK
-        run: gradle :app:assembleDebug
+        run: ./gradlew --no-daemon :app:assembleDebug
+
       - name: Verify merged Android manifest
         run: python3 ./verify-merged-manifest.py
-      - name: Verify SPIR-V shaders are packaged in APK
+
+      - name: Verify SPIR-V shaders in APK
         run: python3 ./verify-apk-shaders.py
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: pjdvm39-arm64-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
