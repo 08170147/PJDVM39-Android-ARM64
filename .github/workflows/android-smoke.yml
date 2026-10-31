@@ -29,6 +29,8 @@ jobs:
         run: bash ./verify-project.sh
       - name: Validate local IPA packaging helper
         run: bash -n ./build-with-ipa.sh && python3 -m py_compile ./tools/extract_exitmenu_bc5_from_ipa.py
+      - name: Test TXP BC5 gallery exporter
+        run: python3 -m py_compile ./tools/decode_txp_bc5.py ./tools/export_txp_gallery.py && python3 -m unittest discover -s tests -v
       - name: Compile and validate BC5 diagnostic shaders
         run: bash ./verify-shaders.sh
       - name: Build ARM64 debug APK
