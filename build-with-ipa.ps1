@@ -41,7 +41,7 @@ if ($LASTEXITCODE -ne 0) { throw "Vertex SPIR-V validation failed" }
 if ($LASTEXITCODE -ne 0) { throw "Fragment SPIR-V validation failed" }
 
 Write-Host "[4/5] Building ARM64 debug APK..."
-gradle :app:assembleDebug
+.\gradlew.bat :app:assembleDebug
 if ($LASTEXITCODE -ne 0) { throw "Gradle build failed" }
 if (-not (Test-Path -LiteralPath $Apk)) { throw "APK was not produced: $Apk" }
 
