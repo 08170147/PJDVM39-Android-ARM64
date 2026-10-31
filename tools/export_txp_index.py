@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Export a conservative JSON inventory of TXP type-2 records and header strings.
+"""Export observed TXP markers, payload hashes, and header string offsets.
 
-This deliberately reports byte offsets and hashes without guessing which
-resource-name entry maps to which texture record.
+The exporter records raw fields and does not infer undocumented resource links.
 """
 from __future__ import annotations
 
@@ -14,30 +13,55 @@ import struct
 from pathlib import Path
 
 
-def find_txp_records(data: bytes) -> list[dict]:
-    markers = []
+def u32(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<I", data, offset)[0]
+
+
+def find_markers(data: bytes) -> list[dict]:
+    offsets = []
     cursor = 0
     while True:
         pos = data.find(b"TXP", cursor)
         if pos < 0:
             break
-        markers.append(pos)
+        offsets.append(pos)
         cursor = pos + 1
 
+    markers = []
+    for i, offset in enumerate(offsets):
+        next_offset = offsets[i + 1] if i + 1 < len(offsets) else len(data)
+        tag = data[offset + 3] if offset + 3 < len(data) else None
+        entry = {
+            "marker_offset": offset,
+            "tag": tag,
+            "tag_hex": f"0x{tag:02x}" if tag is not None else None,
+            "next_marker_offset": next_offset if next_offset < len(data) else None,
+            "bytes_until_next_marker": next_offset - offset,
+        }
+        if tag in (2, 3, 4) and offset + 4 <= next_offset:
+            entry["raw_header_u32_le"] = [
+                {"relative_offset": rel, "value": u32(data, offset + rel)}
+                for rel in range(4, min(24, next_offset - offset - 3), 4)
+            ]
+        markers.append(entry)
+    return markers
+
+
+def find_type2_payloads(data: bytes, markers: list[dict]) -> list[dict]:
+    type2 = [m for m in markers if m["tag"] == 2]
     records = []
-    for marker_index, offset in enumerate(markers):
-        if offset + 4 > len(data) or data[offset + 3] != 2:
-            continue
-        next_marker = markers[marker_index + 1] if marker_index + 1 < len(markers) else len(data)
-        if offset + 24 > next_marker:
+    for i, marker in enumerate(type2):
+        offset = marker["marker_offset"]
+        next_offset = marker["next_marker_offset"] or len(data)
+        if offset + 24 > next_offset:
             raise ValueError(f"Truncated TXP type-2 header at 0x{offset:x}")
         width = struct.unpack_from("<H", data, offset + 4)[0]
         height = struct.unpack_from("<H", data, offset + 8)[0]
-        format_id = struct.unpack_from("<I", data, offset + 12)[0]
-        payload = data[offset + 24:next_marker]
+        format_id = u32(data, offset + 12)
+        payload = data[offset + 24:next_offset]
         expected_bc5 = ((width + 3) // 4) * ((height + 3) // 4) * 16
         records.append({
-            "index": len(records),
+            "index": i,
             "marker_offset": offset,
             "width": width,
             "height": height,
@@ -46,7 +70,7 @@ def find_txp_records(data: bytes) -> list[dict]:
             "payload_bytes": len(payload),
             "payload_sha256": hashlib.sha256(payload).hexdigest(),
             "bc5_size_match": len(payload) == expected_bc5,
-            "next_txp_marker_offset": next_marker if next_marker < len(data) else None,
+            "next_marker_offset": marker["next_marker_offset"],
         })
     return records
 
@@ -58,44 +82,52 @@ def main() -> int:
     args = parser.parse_args()
 
     data = args.binary.read_bytes()
-    records = find_txp_records(data)
-    first_record = min((r["marker_offset"] for r in records), default=len(data))
-    header = data[:first_record]
+    markers = find_markers(data)
+    first_marker = markers[0]["marker_offset"] if markers else len(data)
+    header = data[:first_marker]
     strings = [
         {"offset": match.start(), "value": match.group().decode("ascii")}
         for match in re.finditer(rb"[A-Za-z0-9_]{3,}", header)
     ]
     header_u32 = [
-        {"offset": offset, "value": struct.unpack_from("<I", header, offset)[0]}
+        {"offset": offset, "value": u32(header, offset)}
         for offset in range(0, min(len(header), 256) - 3, 4)
     ]
+    type2_records = find_type2_payloads(data, markers)
 
     result = {
         "source_file": args.binary.name,
         "source_bytes": len(data),
         "source_sha256": hashlib.sha256(data).hexdigest(),
-        "observed_header_bytes_before_first_type2_txp": first_record,
+        "bytes_before_first_txp_marker": first_marker,
         "header_u32_le_first_256_bytes": header_u32,
         "header_ascii_identifiers": strings,
-        "txp_type2_record_count": len(records),
-        "txp_type2_records": records,
+        "txp_marker_count": len(markers),
+        "txp_markers": markers,
+        "txp_type2_record_count": len(type2_records),
+        "txp_type2_records": type2_records,
         "interpretation_notes": [
-            "Header strings are listed at their observed byte offsets only.",
-            "No resource-name-to-texture mapping is inferred.",
-            "format_id and BC5 size match are observations, not proof of runtime semantics.",
-            "Payload boundaries use the next literal TXP marker; validate if the container format evolves."
+            "TXP tag values are reported as observed; undocumented tag semantics are not assumed.",
+            "TXP marker headers are exposed as raw little-endian words for further reverse engineering.",
+            "Header strings are listed at their observed byte offsets only; no name-to-texture mapping is inferred.",
+            "Type-2 payload boundaries end at the next literal TXP marker.",
+            "BC5 size match and format_id are observations, not proof of runtime semantics."
         ],
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({
+    summary = {
         "output": str(args.out),
         "source_bytes": len(data),
-        "header_bytes": first_record,
+        "bytes_before_first_marker": first_marker,
         "header_identifiers": len(strings),
-        "txp_type2_records": len(records),
-        "all_payloads_match_bc5_size": all(r["bc5_size_match"] for r in records),
-    }, ensure_ascii=False, indent=2))
+        "txp_marker_count": len(markers),
+        "txp_tag_counts": {f"0x{tag:02x}": sum(m["tag"] == tag for m in markers)
+                           for tag in sorted({m["tag"] for m in markers if m["tag"] is not None})},
+        "txp_type2_records": len(type2_records),
+        "all_type2_payloads_match_bc5_size": all(r["bc5_size_match"] for r in type2_records),
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
 
