@@ -36,3 +36,17 @@ The channel-split diagnostic shader now shows R as grayscale on the left half an
 4. Only after those values are recovered, build a 2D UI compositor and compare a rendered Android menu against a reference image.
 
 A channel preview is an inspection aid, not a final-color reconstruction.
+
+## Follow-up visual comparison (2026-10-31)
+
+The full-resolution side-by-side grayscale previews were inspected. R carries continuous grayscale detail across the large character illustration and the UI atlas. G is much more threshold-like: the large character silhouette and selected UI glyphs are bright against large black regions. The G image also contains soft edge falloff around several shapes, so it should not be described as strictly binary.
+
+A useful **test hypothesis** is that R may be a grayscale/intensity source and G may be a coverage/opacity-like mask, with a shader or material supplying the final tint. This is more plausible than treating R and G as independent red and green display colors, but it is not yet proven. BC5 itself does not identify channel semantics; only the original material/shader or a rendered reference can establish them.
+
+As a diagnostic-only experiment, combining the R grayscale image as RGB with G as the PNG alpha channel produces a visually coherent atlas with transparent black regions. This experiment does not prove that the original game uses G as alpha: the atlas contains broad bright UI regions in G as well, and material tint/blend settings remain unknown.
+
+The character artwork appears upside down within the atlas image as decoded. Do not rotate the entire texture blindly: the correct orientation may be specified per sprite by UV coordinates or transform metadata.
+
+## Updated next step
+
+Prioritize recovering the material/shader convention and sprite rectangles before attempting a full menu composition. Keep three interpretations open until corroborated: (a) R=intensity, G=coverage; (b) R/G are two independent material inputs; (c) the observed BC5 candidate format/layout is only partially decoded. Validate with the original resource metadata and a reference screenshot.
