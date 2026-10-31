@@ -94,6 +94,30 @@ def main() -> int:
         for offset in range(0, min(len(header), 256) - 3, 4)
     ]
     type2_records = find_type2_payloads(data, markers)
+    # Preserve the observed seven TXP04 + two TXP02 sequence groups without
+    # assigning undocumented semantic names to any fields.
+    type2_by_offset = {r["marker_offset"]: r for r in type2_records}
+    type2_offsets = [r["marker_offset"] for r in type2_records]
+    txp4_groups = []
+    for marker in markers:
+        if marker["tag"] != 4:
+            continue
+        txp4_offset = marker["marker_offset"]
+        following = [p for p in type2_offsets if p > txp4_offset]
+        pair = following[:2]
+        txp4_groups.append({
+            "group_index": len(txp4_groups),
+            "txp4_marker_offset": txp4_offset,
+            "txp4_bytes_before_next_marker": marker["bytes_until_next_marker"],
+            "txp4_raw_bytes_hex": data[txp4_offset:txp4_offset + 20].hex(),
+            "following_type2_records": [
+                {k: type2_by_offset[p][k] for k in
+                 ("index", "marker_offset", "width", "height", "format_id",
+                  "payload_bytes", "payload_sha256")}
+                for p in pair
+            ],
+            "note": "Sequence grouping only; semantic relationship is unverified."
+        })
 
     result = {
         "source_file": args.binary.name,
@@ -104,14 +128,14 @@ def main() -> int:
         "header_ascii_identifiers": strings,
         "txp_marker_count": len(markers),
         "txp_markers": markers,
-        "txp_type2_record_count": len(type2_records),
+        "txp_type2_record_count": len(type2_records),\n        "txp04_sequence_groups": txp4_groups,
         "txp_type2_records": type2_records,
         "interpretation_notes": [
             "TXP tag values are reported as observed; undocumented tag semantics are not assumed.",
             "TXP marker headers are exposed as raw little-endian words for further reverse engineering.",
             "Header strings are listed at their observed byte offsets only; no name-to-texture mapping is inferred.",
             "Type-2 payload boundaries end at the next literal TXP marker.",
-            "BC5 size match and format_id are observations, not proof of runtime semantics."
+            "BC5 size match and format_id are observations, not proof of runtime semantics.",\n            "TXP04 groups list the next two TXP2 records by sequence only; semantic pairing is unverified."
         ],
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
