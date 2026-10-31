@@ -27,7 +27,7 @@ public final class MainActivity extends Activity implements SurfaceHolder.Callba
         root.setOrientation(LinearLayout.VERTICAL);
 
         TextView heading = new TextView(this);
-        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\nExpected: a dark blue clear color if presentation succeeds.");
+        heading.setText("PJDV M39 · Vulkan Surface Smoke Test\nExpected: split grayscale test (dark left / bright right) if texture sampling succeeds.");
         heading.setPadding(20, 18, 20, 14);
         root.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
