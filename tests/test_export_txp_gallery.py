@@ -2,17 +2,15 @@
 """Regression tests for the TXP BC5 gallery exporter (stdlib unittest)."""
 from __future__ import annotations
 
-import importlib.util
 import json
+import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import struct
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ROOT / "tools"
-sys.path.insert(0, str(TOOLS))
+sys.path.insert(0, str(ROOT / "tools"))
 
 from decode_txp_bc5 import decode_bc5, find_records  # noqa: E402
 from export_txp_gallery import main as gallery_main  # noqa: E402
@@ -29,9 +27,11 @@ def make_txp02(width: int, height: int, payload: bytes) -> bytes:
 
 class GalleryExporterTests(unittest.TestCase):
     def test_finds_two_records_and_exact_bc5_payload_sizes(self):
-        payload_a = bytes(range(16))  # one 4x4 BC5 block
-        payload_b = bytes(range(32))  # two 4x4 blocks
-        binary = b"prefix" + make_txp02(4, 4, payload_a) + b"gap" + make_txp02(8, 4, payload_b)
+        payload_a = bytes(range(16))
+        payload_b = bytes(range(32))
+        # TXP records are delimited by the next TXP marker; do not insert
+        # arbitrary padding between a payload and the following record.
+        binary = b"prefix" + make_txp02(4, 4, payload_a) + make_txp02(8, 4, payload_b)
         records = find_records(binary)
         self.assertEqual(len(records), 2)
         self.assertEqual(records[0]["payload"], payload_a)
