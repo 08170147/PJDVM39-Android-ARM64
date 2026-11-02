@@ -128,14 +128,16 @@ def main() -> int:
         "header_ascii_identifiers": strings,
         "txp_marker_count": len(markers),
         "txp_markers": markers,
-        "txp_type2_record_count": len(type2_records),\n        "txp04_sequence_groups": txp4_groups,
+        "txp_type2_record_count": len(type2_records),
+        "txp04_sequence_groups": txp4_groups,
         "txp_type2_records": type2_records,
         "interpretation_notes": [
             "TXP tag values are reported as observed; undocumented tag semantics are not assumed.",
             "TXP marker headers are exposed as raw little-endian words for further reverse engineering.",
             "Header strings are listed at their observed byte offsets only; no name-to-texture mapping is inferred.",
             "Type-2 payload boundaries end at the next literal TXP marker.",
-            "BC5 size match and format_id are observations, not proof of runtime semantics.",\n            "TXP04 groups list the next two TXP2 records by sequence only; semantic pairing is unverified."
+            "BC5 size match and format_id are observations, not proof of runtime semantics.",
+            "TXP04 groups list the next two TXP2 records by sequence only; semantic pairing is unverified."
         ],
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
