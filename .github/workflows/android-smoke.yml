@@ -43,18 +43,15 @@ jobs:
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
 
-      - name: Set up Gradle caching
+           - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Install shader validation tools
         run: |
           sudo apt-get update
           sudo apt-get install -y glslang-tools spirv-tools
-
-      - name: Prepare Gradle Wrapper
-        run: |
-          sed -i 's/\r$//' gradlew
-          chmod +x gradlew
 
       - name: Verify manifest and JNI declarations
         run: python3 ./verify-manifest.py
@@ -82,7 +79,7 @@ jobs:
           echo "Configured local.properties for runner SDK: $ANDROID_HOME"
 
       - name: Build ARM64 debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug
 
       - name: Verify merged Android manifest
         run: python3 ./verify-merged-manifest.py
