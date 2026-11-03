@@ -75,6 +75,12 @@ jobs:
       - name: Compile and validate BC5 diagnostic shaders
         run: bash ./verify-shaders.sh
 
+      - name: Configure local Android SDK path for this runner
+        run: |
+          test -d "$ANDROID_HOME"
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          echo "Configured local.properties for runner SDK: $ANDROID_HOME"
+
       - name: Build ARM64 debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
 
